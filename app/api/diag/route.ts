@@ -26,9 +26,9 @@ Phase 3 : Attendre la validation de l'utilisateur ('Mesure conforme' ou 'Mesure 
 
     const userPrompt = `${SYSTEM_PROMPT}\n\nVéhicule : ${motorisation} (Plaque : ${plate})\nCode DTC : ${dtc}\nSymptômes constatés : ${symptoms}`
 
-    // CORRECTION ICI : Utilisation de "gemini-1.5-flash-latest" pour éviter le bug d'API de Google
+    // CORRECTION ICI : Utilisation de "gemini-3.7-flash" pour éviter le bug d'API de Google
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: {
