@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import { GoogleGenAI } from "@google/genai"
 
 export const maxDuration = 60
 
@@ -22,21 +21,26 @@ Phase 1 : Hiérarchisation des 3 causes physiques les plus probables sur cette m
 Phase 2 : Protocole de mesure pas-à-pas physique et mesurable (ex: piquer la Pin X, consigne 5V).
 Phase 3 : Attendre la validation de l'utilisateur ('Mesure conforme' ou 'Mesure non conforme').`
 
-    const prompt = `Véhicule : ${motorisation} (Plaque : ${plate})
-Code DTC : ${dtc}
-Symptômes : ${symptoms}`
+    const promptText = `${SYSTEM_PROMPT}\n\nVéhicule : ${motorisation} (Plaque : ${plate})\nCode DTC : ${dtc}\nSymptômes : ${symptoms}`
 
-    const ai = new GoogleGenAI({ apiKey })
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        { role: "user", parts: [{ text: `${SYSTEM_PROMPT}\n\n${prompt}` }] }
-      ]
+    // Appel direct à l'API Gemini v1beta sans dépendance externe
+    const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }]
+      })
     })
 
-    const text = response.text || "Analyse terminée."
+    const data = await apiRes.json()
+    
+    if (data.error) {
+      return NextResponse.json({ error: data.error.message || "Erreur de l'API Gemini." }, { status: 500 })
+    }
+
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "Analyse terminée."
     return NextResponse.json({ response: text })
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Erreur interne." }, { status: 500 })
+    return NextResponse.json({ error: err?.message || "Erreur interne du serveur." }, { status: 500 })
   }
 }
