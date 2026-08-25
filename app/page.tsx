@@ -1,54 +1,129 @@
-'use client'
+"use client"
 
-import { useState } from 'react'
-import { AppHeader } from '@/components/app-header'
-import { VehicleCard } from '@/components/vehicle-card'
-import { DiagTimeline } from '@/components/diag-timeline'
-import { JackBubble } from '@/components/jack-bubble'
-import { Multimeter, type MeasureStatus } from '@/components/multimeter'
-import { ActionBar } from '@/components/action-bar'
+import { useState } from "react"
+import { ShieldCheck, AlertTriangle, CheckCircle2, Wrench, RefreshCw, Send } from "lucide-react"
 
-const messages: Record<MeasureStatus, string> = {
-  waiting:
-    "J'analyse le code P0234 sur ce bloc 1.5 BlueHDi. Vérifions l'électrovanne de turbo. Mets le contact, pique la Pin 3 du connecteur et donne-moi la tension.",
-  ok: "Parfait, 5V au repos : l'alimentation du capteur et le circuit de commande sont sains. On passe au contrôle de la résistance de l'électrovanne (attendu 15–20 Ω), débranche le connecteur.",
-  ko: "Zéro volt sur la Pin 3 : l'électrovanne n'est pas alimentée. Remonte le faisceau vers le calculateur et contrôle la continuité, puis le fusible F14 de la platine moteur.",
-}
+export default function Home() {
+  const [plate, setPlate] = useState("AA-123-BB")
+  const [vehicle, setVehicle] = useState("Peugeot 3008 II - 1.5 BlueHDi 130 (DV5RC)")
+  const [dtc, setDtc] = useState("P0234")
+  const [symptoms, setSymptoms] = useState("Perte de puissance sous charge, voyant moteur")
+  const [loading, setLoading] = useState(false)
+  const [jackResponse, setJackResponse] = useState("")
+  const [voltage, setVoltage] = useState("Attente...")
 
-export default function DiagnosticPage() {
-  const [status, setStatus] = useState<MeasureStatus>('waiting')
+  const handleLaunchDiag = async () => {
+    setLoading(true)
+    setJackResponse("")
+    try {
+      const res = await fetch("/api/diag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            content: `Véhicule: ${vehicle} (Plaque: ${plate}), Code DTC: ${dtc}, Symptômes: ${symptoms}`
+          }]
+        })
+      })
+      const data = await res.text()
+      setJackResponse(data)
+    } catch {
+      setJackResponse("Erreur de communication avec l'assistant. Vérifiez la clé API.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleMeasure = (conform: boolean) => {
+    if (conform) {
+      setVoltage("5.02 V (Conforme)")
+      setJackResponse("Mesure conforme (5V). Faisceau et alimentation validés. Contrôle suivant : étanchéité de la commande pneumatique de suralimentation.")
+    } else {
+      setVoltage("0.04 V (Non conforme)")
+      setJackResponse("Mesure non conforme. Absence de tension. Vérifiez le fusible d'alimentation ou une coupure sur le faisceau broche 3.")
+    }
+  }
 
   return (
-    <div className="grid-floor min-h-dvh">
-      <AppHeader />
-
-      <main className="mx-auto max-w-3xl px-4 pb-64 pt-20 md:pb-40 md:pt-24">
-        <h1 className="sr-only">
-          Diagnostic en cours — Peugeot 3008 II, code P0234
-        </h1>
-
-        <div className="flex flex-col gap-5">
-          <VehicleCard />
-
-          <section aria-label="Zone de diagnostic" className="flex flex-col gap-4">
-            <DiagTimeline activeIndex={2} />
-            <JackBubble message={messages[status]} />
-            <Multimeter status={status} />
-          </section>
-
-          {status !== 'waiting' && (
-            <button
-              type="button"
-              onClick={() => setStatus('waiting')}
-              className="mx-auto rounded-xl px-4 py-2 font-mono text-xs uppercase tracking-widest text-muted-foreground ring-1 ring-glass-border transition-colors hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            >
-              Refaire la mesure
-            </button>
-          )}
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-4 max-w-2xl mx-auto flex flex-col gap-4 font-sans">
+      <header className="flex justify-between items-center py-2 border-b border-slate-800">
+        <div className="flex items-center gap-2 font-bold text-lg text-blue-400">
+          <Wrench className="w-5 h-5" /> Jack Copilot
         </div>
-      </main>
+        <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-1 rounded">OBD-II Connecté</span>
+      </header>
 
-      <ActionBar status={status} onSelect={setStatus} />
-    </div>
+      <section className="bg-slate-900 border border-slate-800 rounded-lg p-4 flex flex-col gap-3">
+        <div className="flex gap-2">
+          <input 
+            type="text" 
+            value={plate} 
+            onChange={(e) => setPlate(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded px-3 py-1 font-mono uppercase font-bold text-center w-36 text-blue-400" 
+            placeholder="AA-123-BB"
+          />
+          <input 
+            type="text" 
+            value={vehicle} 
+            onChange={(e) => setVehicle(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded px-3 py-1 text-sm flex-1"
+          />
+        </div>
+        <div className="flex gap-2">
+          <input 
+            type="text" 
+            value={dtc} 
+            onChange={(e) => setDtc(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded px-3 py-1 font-mono text-sm w-28 text-amber-400" 
+            placeholder="Code DTC"
+          />
+          <input 
+            type="text" 
+            value={symptoms} 
+            onChange={(e) => setSymptoms(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded px-3 py-1 text-sm flex-1" 
+            placeholder="Symptômes"
+          />
+        </div>
+        <button 
+          onClick={handleLaunchDiag} 
+          disabled={loading}
+          className="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-4 rounded flex justify-center items-center gap-2"
+        >
+          {loading ? <RefreshCw className="animate-spin w-4 h-4" /> : <Send className="w-4 h-4" />}
+          Analyser avec Jack
+        </button>
+      </section>
+
+      <section className="bg-slate-900 border border-slate-800 rounded-lg p-4 flex flex-col gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+          <ShieldCheck className="w-4 h-4 text-blue-400" /> Analyse Chef d'Atelier
+        </div>
+        <div className="text-sm whitespace-pre-wrap leading-relaxed text-slate-200">
+          {jackResponse || "Saisissez les informations de panne et lancez l'analyse pour démarrer le protocole de diagnostic."}
+        </div>
+      </section>
+
+      <section className="bg-black border border-slate-800 rounded-lg p-3 text-center">
+        <span className="text-xs text-slate-500 block mb-1">Affichage Multimètre</span>
+        <div className="font-mono text-xl text-emerald-400 font-bold">{voltage}</div>
+      </section>
+
+      <section className="grid grid-cols-2 gap-3 mt-auto pt-4">
+        <button 
+          onClick={() => handleMeasure(true)}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-lg flex flex-col items-center justify-center gap-1 text-sm"
+        >
+          <CheckCircle2 className="w-5 h-5" /> Mesure Conforme (5V)
+        </button>
+        <button 
+          onClick={() => handleMeasure(false)}
+          className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-4 rounded-lg flex flex-col items-center justify-center gap-1 text-sm"
+        >
+          <AlertTriangle className="w-5 h-5" /> Mesure Non Conforme
+        </button>
+      </section>
+    </main>
   )
 }
