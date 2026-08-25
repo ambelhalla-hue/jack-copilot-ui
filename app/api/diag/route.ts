@@ -23,7 +23,7 @@ Phase 3 : Attendre la validation de l'utilisateur ('Mesure conforme' ou 'Mesure 
 
     const promptText = `${SYSTEM_PROMPT}\n\nVéhicule : ${motorisation} (Plaque : ${plate})\nCode DTC : ${dtc}\nSymptômes : ${symptoms}`
 
-    // Appel direct à l'API Gemini v1beta sans dépendance externe
+    // Appel direct à l'API Gemini 2.5 Flash
     const apiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
