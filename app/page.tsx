@@ -1,13 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { ShieldCheck, AlertTriangle, CheckCircle2, Wrench, RefreshCw, Send, Car } from "lucide-react"
+import { ShieldCheck, AlertTriangle, CheckCircle2, Wrench, RefreshCw, Send } from "lucide-react"
 
 export default function Home() {
-  const [plate, setPlate] = useState("GR-608-BP")
-  const [motorisation, setMotorisation] = useState("Renault Clio IV - 1.5 dCi 90 (K9K)")
-  const [dtc, setDtc] = useState("P0401")
-  const [symptoms, setSymptoms] = useState("À-coups à l'accélération, fumée noire, vanne EGR encrassée")
+  const [plate, setPlate] = useState("AA-123-BB")
+  const [vehicle, setVehicle] = useState("Peugeot 3008 II - 1.5 BlueHDi 130 (DV5RC)")
+  const [dtc, setDtc] = useState("P0234")
+  const [symptoms, setSymptoms] = useState("Perte de puissance sous charge, voyant moteur")
   const [loading, setLoading] = useState(false)
   const [jackResponse, setJackResponse] = useState("")
   const [voltage, setVoltage] = useState("Attente...")
@@ -21,7 +21,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plate: plate,
-          motorisation: motorisation,
+          motorisation: vehicle,
           dtc: dtc,
           symptoms: symptoms
         })
@@ -42,7 +42,7 @@ export default function Home() {
   const handleMeasure = (conform: boolean) => {
     if (conform) {
       setVoltage("5.02 V (Conforme)")
-      setJackResponse("Mesure conforme (5V). Faisceau et alimentation validés. Passons au contrôle physique de l'actionneur.")
+      setJackResponse("Mesure conforme (5V). Faisceau et alimentation validés. Contrôle suivant : étanchéité de la commande pneumatique.")
     } else {
       setVoltage("0.04 V (Non conforme)")
       setJackResponse("Mesure non conforme. Absence de tension. Vérifiez le fusible d'alimentation ou le faisceau broche 3.")
@@ -67,16 +67,13 @@ export default function Home() {
             className="bg-slate-950 border border-slate-700 rounded px-3 py-2 font-mono uppercase font-bold text-center w-36 text-blue-400" 
             placeholder="AA-123-BB"
           />
-          <div className="flex-1 relative flex items-center">
-            <input 
-              type="text" 
-              value={motorisation} 
-              onChange={(e) => setMotorisation(e.target.value)}
-              className="bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm w-full text-slate-200" 
-              placeholder="Modèle et motorisation"
-            />
-            <Car className="w-4 h-4 text-slate-500 absolute right-3 pointer-events-none" />
-          </div>
+          <input 
+            type="text" 
+            value={vehicle} 
+            onChange={(e) => setVehicle(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm flex-1 text-slate-200" 
+            placeholder="Modèle et motorisation"
+          />
         </div>
 
         <div className="flex gap-2">
