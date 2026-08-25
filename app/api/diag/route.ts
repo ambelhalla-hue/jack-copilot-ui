@@ -14,8 +14,8 @@ export async function POST(req: Request) {
 
     const body = await req.json()
     const plate = body.plate || "Non renseignée"
-    const motorisation = body.motorisation || body.vehicle || body.vehicle_info || "Véhicule non spécifié"
-    const dtc = body.dtc || body.dtc_code || "DTC non spécifié"
+    const motorisation = body.motorisation || body.vehicle || "Véhicule non spécifié"
+    const dtc = body.dtc || "DTC non spécifié"
     const symptoms = body.symptoms || "Symptômes non spécifiés"
 
     const SYSTEM_PROMPT = `Tu es Jack, Chef d'Atelier expert avec 20 ans d'expérience. Tu t'adresses à des mécaniciens professionnels francophones en utilisant le jargon d'atelier réel.
@@ -26,7 +26,6 @@ Phase 3 : Attendre la validation de l'utilisateur ('Mesure conforme' ou 'Mesure 
 
     const userPrompt = `${SYSTEM_PROMPT}\n\nVéhicule : ${motorisation} (Plaque : ${plate})\nCode DTC : ${dtc}\nSymptômes constatés : ${symptoms}`
 
-    // CORRECTION : Appel de la version officielle gemini-1.5-flash
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
