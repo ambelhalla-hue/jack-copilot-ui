@@ -24,14 +24,11 @@ Phase 1 : Hiérarchisation des 3 causes physiques les plus probables sur cette m
 Phase 2 : Protocole de mesure pas-à-pas physique et mesurable (ex: piquer la Pin X, consigne 5V).
 Phase 3 : Attendre la validation de l'utilisateur ('Mesure conforme' ou 'Mesure non conforme').`
 
-    const userPrompt = `${SYSTEM_PROMPT}
+    const userPrompt = `${SYSTEM_PROMPT}\n\nVéhicule : ${motorisation} (Plaque : ${plate})\nCode DTC : ${dtc}\nSymptômes constatés : ${symptoms}`
 
-Véhicule : ${motorisation} (Plaque : ${plate})
-Code DTC : ${dtc}
-Symptômes constatés : ${symptoms}`
-
+    // CORRECTION : Appel de la version officielle gemini-1.5-flash
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: {
