@@ -21,9 +21,9 @@ Adapte-toi immédiatement si le mécanicien te dit "C'est pas ça", et donne la 
       parts: [{ text: msg.content }]
     }))
 
-    // Utilisation du modèle réel et disponible : gemini-2.5-flash-lite
+    // MISE À JOUR : On obéit à Google et on passe à la 3.5 Flash Lite !
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
