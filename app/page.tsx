@@ -1,48 +1,16 @@
 "use client"
 
 import { useState } from "react"
-import { ShieldCheck, AlertTriangle, CheckCircle2, Wrench, RefreshCw, Send, Search } from "lucide-react"
-
-// Base locale de correspondances rapides (Simulation SIV + Symptômes fréquents)
-const VEHICLE_DATABASE: Record<string, { model: string; defaultDtc: string; defaultSymptom: string }> = {
-  "AA-123-BB": {
-    model: "Peugeot 3008 II - 1.5 BlueHDi 130 (DV5RC)",
-    defaultDtc: "P0234",
-    defaultSymptom: "Perte de puissance sous forte charge, voyant moteur orange"
-  },
-  "GR-608-BP": {
-    model: "Renault Clio IV - 1.5 dCi 90 (K9K)",
-    defaultDtc: "P0401",
-    defaultSymptom: "À-coups à l'accélération, fumée noire, vanne EGR encrassée"
-  },
-  "FK-456-ZZ": {
-    model: "Volkswagen Golf VII - 2.0 TDI 150 (CRBC)",
-    defaultDtc: "P2002",
-    defaultSymptom: "Régénération FAP impossible, témoin préchauffage clignotant"
-  }
-}
+import { ShieldCheck, AlertTriangle, CheckCircle2, Wrench, RefreshCw, Send, Car } from "lucide-react"
 
 export default function Home() {
-  const [plate, setPlate] = useState("GR-608-BP")
-  const [vehicle, setVehicle] = useState("Renault Clio IV - 1.5 dCi 90 (K9K)")
-  const [dtc, setDtc] = useState("P0401")
-  const [symptoms, setSymptoms] = useState("À-coups à l'accélération, fumée noire, vanne EGR encrassée")
+  const [plate, setPlate] = useState("CG-787-CY")
+  const [vehicle, setVehicle] = useState("Peugeot 208 - 1.2 PureTech 82 (EB2F)")
+  const [dtc, setDtc] = useState("P0304")
+  const [symptoms, setSymptoms] = useState("Raté d'allumage cylindre 4, tremblements au ralenti")
   const [loading, setLoading] = useState(false)
   const [jackResponse, setJackResponse] = useState("")
   const [voltage, setVoltage] = useState("Attente...")
-
-  // Détection et remplissage automatique selon la plaque
-  const handlePlateChange = (inputPlate: string) => {
-    const formatted = inputPlate.toUpperCase()
-    setPlate(formatted)
-
-    if (VEHICLE_DATABASE[formatted]) {
-      const data = VEHICLE_DATABASE[formatted]
-      setVehicle(data.model)
-      setDtc(data.defaultDtc)
-      setSymptoms(data.defaultSymptom)
-    }
-  }
 
   const handleLaunchDiag = async () => {
     setLoading(true)
@@ -52,16 +20,33 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          plate: plate.trim(),
+          motorisation: vehicle.trim(),
+          vehicle: vehicle.trim(),
+          dtc: dtc.trim().toUpperCase(),
+          symptoms: symptoms.trim(),
           messages: [{
             role: "user",
             content: `Véhicule: ${vehicle} (Plaque: ${plate}), Code DTC: ${dtc}, Symptômes: ${symptoms}`
           }]
         })
       })
-      const data = await res.text()
-      setJackResponse(data)
+
+      const raw = await res.text()
+      try {
+        const data = JSON.parse(raw)
+        if (data.error) {
+          setJackResponse(`Erreur : ${data.error}`)
+        } else if (data.response || data.text || data.message) {
+          setJackResponse(data.response || data.text || data.message)
+        } else {
+          setJackResponse(raw)
+        }
+      } catch {
+        setJackResponse(raw)
+      }
     } catch {
-      setJackResponse("Erreur de liaison API. Vérifiez la clé GEMINI_API_KEY dans Vercel.")
+      setJackResponse("Erreur de communication avec le serveur API.")
     } finally {
       setLoading(false)
     }
@@ -70,10 +55,10 @@ export default function Home() {
   const handleMeasure = (conform: boolean) => {
     if (conform) {
       setVoltage("5.02 V (Conforme)")
-      setJackResponse("Mesure conforme (5V). Faisceau et alimentation validés. Étape suivante : contrôle physique du capteur et du circuit de commande.")
+      setJackResponse("Mesure conforme (5V). Faisceau et alimentation validés. Étape suivante : inversion bobine/bougie pour isoler le composant.")
     } else {
       setVoltage("0.04 V (Non conforme)")
-      setJackResponse("Mesure non conforme. Absence de tension. Vérifiez le fusible d'alimentation ou une coupure sur le faisceau broche 3.")
+      setJackResponse("Mesure non conforme. Absence de tension. Vérifiez le fusible d'alimentation ou le faisceau d'allumage.")
     }
   }
 
@@ -89,22 +74,23 @@ export default function Home() {
       {/* Saisie Véhicule & Plaque */}
       <section className="bg-slate-900 border border-slate-800 rounded-lg p-4 flex flex-col gap-3">
         <div className="flex gap-2">
-          <div className="relative">
-            <input 
-              type="text" 
-              value={plate} 
-              onChange={(e) => handlePlateChange(e.target.value)}
-              className="bg-slate-950 border border-slate-700 rounded px-3 py-2 font-mono uppercase font-bold text-center w-36 text-blue-400" 
-              placeholder="AA-123-BB"
-            />
-          </div>
           <input 
             type="text" 
-            value={vehicle} 
-            onChange={(e) => setVehicle(e.target.value)}
-            className="bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm flex-1 text-slate-200" 
-            placeholder="Modèle et motorisation détectés"
+            value={plate} 
+            onChange={(e) => setPlate(e.target.value.toUpperCase())}
+            className="bg-slate-950 border border-slate-700 rounded px-3 py-2 font-mono uppercase font-bold text-center w-36 text-blue-400" 
+            placeholder="AA-123-BB"
           />
+          <div className="flex-1 relative flex items-center">
+            <input 
+              type="text" 
+              value={vehicle} 
+              onChange={(e) => setVehicle(e.target.value)}
+              className="bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm w-full text-slate-200" 
+              placeholder="Modèle et motorisation (ex: Peugeot 208 1.2 PureTech)"
+            />
+            <Car className="w-4 h-4 text-slate-500 absolute right-3 pointer-events-none" />
+          </div>
         </div>
 
         <div className="flex gap-2">
@@ -134,13 +120,13 @@ export default function Home() {
         </button>
       </section>
 
-      {/* Réponse Chef d'Atelier */}
+      {/* Bulle Jack */}
       <section className="bg-slate-900 border border-slate-800 rounded-lg p-4 flex flex-col gap-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
           <ShieldCheck className="w-4 h-4 text-blue-400" /> Analyse Chef d'Atelier
         </div>
         <div className="text-sm whitespace-pre-wrap leading-relaxed text-slate-200">
-          {jackResponse || "Saisissez ou modifiez l'immatriculation pour charger un cas type, puis cliquez sur Analyser avec Jack."}
+          {jackResponse || "Saisissez les informations de la panne et cliquez sur Analyser avec Jack pour lancer le protocole."}
         </div>
       </section>
 
