@@ -21,9 +21,9 @@ Adapte-toi immédiatement si le mécanicien te dit "C'est pas ça", et donne la 
       parts: [{ text: msg.content }]
     }))
 
-    // Bascule sur la voie rapide et stable : gemini-1.5-flash
+    // Passage en force sur la version Gemini 3.5 Flash Light
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-light:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -36,12 +36,8 @@ Adapte-toi immédiatement si le mécanicien te dit "C'est pas ça", et donne la 
 
     const data = await response.json()
     
-    // Gestion propre de l'erreur de surcharge (High Demand)
     if (!response.ok || data.error) {
         const errorMsg = data.error?.message || "Erreur API Gemini"
-        if (errorMsg.includes("high demand") || errorMsg.includes("overloaded")) {
-            return NextResponse.json({ error: "Les serveurs de l'IA sont surchargés pour le moment. Réessayez dans quelques secondes." }, { status: 503 })
-        }
         return NextResponse.json({ error: errorMsg }, { status: 500 })
     }
 
