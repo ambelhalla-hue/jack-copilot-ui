@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server"
 
-export const maxDuration = 60
-
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) return NextResponse.json({ error: "Clé API GEMINI manquante." }, { status: 500 })
+    if (!apiKey) return NextResponse.json({ error: "Clé API manquante." }, { status: 500 })
 
     const body = await req.json()
     const messages = body.messages || []
 
-    // Le Cerveau Niveau 1 : Strict, Radical et Commercial
     const SYSTEM_PROMPT = `Tu es Jack, Chef d'Atelier expert.
 RÈGLE ABSOLUE : Sois BREF, RADICAL et PRÉCIS. Style télégraphique. AUCUNE explication théorique inutile.
 
@@ -29,9 +26,9 @@ RÈGLES SPÉCIALES "NIVEAU 1" À APPLIQUER :
       parts: [{ text: msg.content }]
     }))
 
-    // Appel natif robuste vers l'API Gemini 3.7 Flash
+    // Moteur Gemini 2.5 Flash configuré et actif
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
