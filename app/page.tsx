@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef, useEffect } from "react"
-import { ShieldCheck, Wrench, Send, RefreshCw, Camera, Video, ShoppingCart, Car } from "lucide-react"
+import { ShieldCheck, Wrench, Send, RefreshCw, Camera, Video, ShoppingCart, Car, Cpu } from "lucide-react"
 
 export default function Home() {
   const [plate, setPlate] = useState("")
@@ -47,65 +47,92 @@ export default function Home() {
     }
   }
 
-  const getYoutubeLink = () => `https://www.youtube.com/results?search_query=tuto+reparation+${encodeURIComponent(vehicle)}+${encodeURIComponent(dtc)}`
-  const getPartsLink = () => `https://www.auto-doc.fr/search?keyword=${encodeURIComponent(vehicle)}+${encodeURIComponent(dtc)}`
+  const extractPiece = (text: string) => {
+    const match = text.match(/\[PIECE_CIBLE:\s*(.+?)\]/i)
+    return match ? match[1].trim() : dtc
+  }
+
+  const cleanText = (text: string) => {
+    return text.replace(/\[PIECE_CIBLE:\s*(.+?)\]/i, "").trim()
+  }
+
+  const getYoutubeLink = (text: string) => {
+    const searchTerms = `tuto reparation ${vehicle} ${extractPiece(text)} en francais`
+    return `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerms)}`
+  }
+  
+  const getPartsLink = (text: string) => {
+    return `https://www.auto-doc.fr/search?keyword=${encodeURIComponent(vehicle)}+${encodeURIComponent(extractPiece(text))}`
+  }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans max-w-2xl mx-auto shadow-2xl">
-      <header className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900/80">
-        <div className="flex items-center gap-2 font-bold text-lg text-blue-400">
-          <Wrench className="w-5 h-5" /> Jack Copilot
+    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-2xl mx-auto shadow-2xl relative selection:bg-blue-500/30">
+      
+      {/* HEADER: Glassmorphism effect */}
+      <header className="sticky top-0 z-50 flex justify-between items-center p-4 border-b border-white/5 bg-[#0B0F17]/70 backdrop-blur-md shadow-sm">
+        <div className="flex items-center gap-2 font-extrabold text-xl text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 tracking-tight">
+          <Cpu className="w-6 h-6 text-cyan-400" /> Jack Copilot
         </div>
-        <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-1 rounded font-mono">Niveau 1 Actif</span>
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+          </span>
+          <span className="text-xs font-mono text-emerald-400/90 uppercase tracking-widest font-semibold">Connecté</span>
+        </div>
       </header>
 
-      <section className="p-4 bg-slate-900 border-b border-slate-800 flex flex-col gap-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input type="text" value={plate} onChange={e => setPlate(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono uppercase w-full text-blue-400 text-sm focus:border-blue-500 pr-10" placeholder="Ex: AA-123-BB"/>
-            <Camera className="w-4 h-4 text-slate-500 absolute right-3 top-3 cursor-pointer hover:text-blue-400 transition" />
+      {/* DASHBOARD INPUTS: Premium Cards */}
+      <section className="p-5 flex flex-col gap-4 bg-gradient-to-b from-white/[0.02] to-transparent border-b border-white/5">
+        <div className="flex gap-3">
+          <div className="relative flex-1 group">
+            <input type="text" value={plate} onChange={e => setPlate(e.target.value.toUpperCase())} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 font-mono uppercase w-full text-blue-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all duration-300 pr-10 shadow-inner" placeholder="Plaque"/>
+            <Camera className="w-4 h-4 text-slate-500 absolute right-4 top-3.5 cursor-pointer group-hover:text-blue-400 transition-colors" />
           </div>
           <div className="relative flex-[2]">
-            <input type="text" value={vehicle} onChange={e => setVehicle(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm w-full focus:border-blue-500 pr-10" placeholder="Ex: Peugeot 3008 1.5 BlueHDi"/>
-            <Car className="w-4 h-4 text-slate-500 absolute right-3 top-3 pointer-events-none" />
+            <input type="text" value={vehicle} onChange={e => setVehicle(e.target.value)} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 text-sm w-full text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all duration-300 pr-10 shadow-inner" placeholder="Modèle et Motorisation"/>
+            <Car className="w-4 h-4 text-slate-500 absolute right-4 top-3.5 pointer-events-none" />
           </div>
-          <div className="relative flex-1">
-            <input type="number" value={mileage} onChange={e => setMileage(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm w-full text-emerald-400 focus:border-emerald-500 pr-10" placeholder="Km réel"/>
-            <Camera className="w-4 h-4 text-slate-500 absolute right-3 top-3 cursor-pointer hover:text-emerald-400 transition" />
+          <div className="relative flex-1 group">
+            <input type="number" value={mileage} onChange={e => setMileage(e.target.value)} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 text-sm w-full font-mono text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition-all duration-300 pr-10 shadow-inner" placeholder="Km réel"/>
+            <Camera className="w-4 h-4 text-slate-500 absolute right-4 top-3.5 cursor-pointer group-hover:text-emerald-400 transition-colors" />
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <input type="text" value={dtc} onChange={e => setDtc(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono text-sm w-28 text-amber-400 font-bold focus:border-amber-500" placeholder="Ex: P0234"/>
-          <input type="text" value={symptoms} onChange={e => setSymptoms(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm flex-1 focus:border-blue-500" placeholder="Ex: Perte de puissance"/>
+        <div className="flex gap-3">
+          <input type="text" value={dtc} onChange={e => setDtc(e.target.value.toUpperCase())} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 font-mono text-sm w-32 text-amber-400 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 transition-all duration-300 shadow-inner" placeholder="Ex: P0234"/>
+          <input type="text" value={symptoms} onChange={e => setSymptoms(e.target.value)} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 text-sm flex-1 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all duration-300 shadow-inner" placeholder="Symptômes constatés"/>
         </div>
         
         {messages.length === 0 && (
-          <button onClick={() => handleSend("J'ai ce véhicule en atelier. Par quoi on commence ?")} className="mt-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition shadow-lg shadow-blue-900/30">
-            <ShieldCheck className="w-5 h-5" /> Lancer le diagnostic IA
+          <button onClick={() => handleSend("J'ai ce véhicule en atelier. Par quoi on commence ?")} className="mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-[0_0_20px_rgba(8,145,178,0.3)] hover:shadow-[0_0_30px_rgba(8,145,178,0.5)] border border-white/10 group">
+            <ShieldCheck className="w-5 h-5 group-hover:scale-110 transition-transform" /> Lancer le diagnostic IA
           </button>
         )}
       </section>
 
-      <section className="flex-1 overflow-y-auto p-4 flex flex-col gap-5 min-h-[300px]">
+      {/* CHAT AREA */}
+      <section className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 min-h-[300px] scroll-smooth">
         {messages.length === 0 && (
-          <div className="text-center text-slate-500 text-sm mt-auto mb-auto">Le diagnostic pas-à-pas s'affichera ici.</div>
+          <div className="text-center text-slate-500/60 text-sm mt-auto mb-auto font-medium">
+            Entrez les paramètres du véhicule pour initialiser le système.
+          </div>
         )}
         
         {messages.map((msg, idx) => (
-          <div key={idx} className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "self-end items-end" : "self-start items-start"}`}>
-            <span className="text-[10px] text-slate-500 mb-1 uppercase tracking-wider">{msg.role === "user" ? "Vous" : "Jack (Chef d'Atelier)"}</span>
-            <div className={`p-3.5 rounded-lg text-sm whitespace-pre-wrap leading-relaxed ${msg.role === "user" ? "bg-blue-600 text-white rounded-tr-none" : "bg-slate-800 border border-slate-700 text-slate-200 rounded-tl-none"}`}>
-              {msg.content}
+          <div key={idx} className={`flex flex-col max-w-[88%] ${msg.role === "user" ? "self-end items-end" : "self-start items-start"}`}>
+            <span className="text-[10px] text-slate-500 mb-1.5 uppercase tracking-widest font-bold">{msg.role === "user" ? "Mécanicien" : "Jack (IA)"}</span>
+            <div className={`p-4 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed shadow-md ${msg.role === "user" ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-sm" : "bg-[#1A2332] border border-slate-700/50 text-slate-200 rounded-tl-sm shadow-[0_4px_20px_rgba(0,0,0,0.2)]"}`}>
+              {msg.role === "assistant" ? cleanText(msg.content) : msg.content}
             </div>
             
             {msg.role === "assistant" && !msg.content.includes("Erreur") && (
-              <div className="flex gap-2 mt-2">
-                <a href={getYoutubeLink()} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] font-semibold bg-red-950/50 text-red-400 border border-red-900/50 px-2 py-1.5 rounded hover:bg-red-900/50 transition">
-                  <Video className="w-3 h-3" /> Tuto Vidéo
+              <div className="flex gap-3 mt-3">
+                <a href={getYoutubeLink(msg.content)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-2 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm">
+                  <Video className="w-3.5 h-3.5" /> Tutoriel Vidéo
                 </a>
-                <a href={getPartsLink()} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] font-semibold bg-amber-950/50 text-amber-400 border border-amber-900/50 px-2 py-1.5 rounded hover:bg-amber-900/50 transition">
-                  <ShoppingCart className="w-3 h-3" /> Pièces Associées
+                <a href={getPartsLink(msg.content)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-2 rounded-lg hover:bg-amber-500/20 transition-colors shadow-sm">
+                  <ShoppingCart className="w-3.5 h-3.5" /> Catalogue Pièces
                 </a>
               </div>
             )}
@@ -113,27 +140,28 @@ export default function Home() {
         ))}
         
         {loading && (
-          <div className="self-start flex items-center gap-2 text-slate-400 text-sm p-3 bg-slate-800/50 rounded-lg">
-            <RefreshCw className="w-4 h-4 animate-spin text-blue-400" /> Jack consulte la base de données...
+          <div className="self-start flex items-center gap-3 text-cyan-400 text-sm p-4 bg-[#1A2332]/80 backdrop-blur border border-cyan-900/30 rounded-2xl rounded-tl-sm shadow-lg">
+            <RefreshCw className="w-4 h-4 animate-spin" /> Traitement des données en cours...
           </div>
         )}
         <div ref={messagesEndRef} />
       </section>
 
-      <section className="p-4 bg-slate-900 border-t border-slate-800">
-        <div className="flex gap-2">
+      {/* FOOTER INPUT */}
+      <section className="p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/5">
+        <div className="flex gap-2 relative">
           <input 
             type="text" 
             value={input} 
             onChange={(e) => setInput(e.target.value)} 
             onKeyDown={(e) => e.key === "Enter" && handleSend(input)} 
-            placeholder="Ex: J'ai mesuré 5V, on fait quoi ? ou Plaquettes usées à 70%..." 
-            className="bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-sm flex-1 text-slate-200 focus:outline-none focus:border-blue-500"
+            placeholder="Ex: J'ai mesuré 5V, on fait quoi ?" 
+            className="bg-[#111827] border border-slate-700/60 rounded-xl px-5 py-3.5 text-sm flex-1 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-inner"
           />
           <button 
             onClick={() => handleSend(input)} 
             disabled={loading || !input.trim()} 
-            className="bg-emerald-600 disabled:bg-slate-800 hover:bg-emerald-500 text-white p-3 rounded-lg flex justify-center items-center transition shadow-md"
+            className="bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-500 hover:bg-emerald-500 text-white p-3.5 rounded-xl flex justify-center items-center transition-all shadow-[0_0_15px_rgba(5,150,105,0.2)] hover:shadow-[0_0_20px_rgba(5,150,105,0.4)]"
           >
             <Send className="w-5 h-5" />
           </button>
