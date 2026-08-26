@@ -1,145 +1,52 @@
-"use client"
-import { useState, useRef, useEffect } from "react"
-import { ShieldCheck, Wrench, Send, RefreshCw, Camera, Video, ShoppingCart, Car } from "lucide-react"
+import { NextResponse } from "next/server"
 
-export default function Home() {
-  // Les champs sont maintenant VIDES par défaut. Le texte "AA-123-BB" sera juste un texte fantôme (placeholder).
-  const [plate, setPlate] = useState("")
-  const [vehicle, setVehicle] = useState("")
-  const [mileage, setMileage] = useState("")
-  const [dtc, setDtc] = useState("")
-  const [symptoms, setSymptoms] = useState("")
-  
-  const [messages, setMessages] = useState<{role: string, content: string}[]>([])
-  const [input, setInput] = useState("")
-  const [loading, setLoading] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+export async function POST(req: Request) {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) return NextResponse.json({ error: "Clé API manquante." }, { status: 500 })
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+    const body = await req.json()
+    const messages = body.messages || []
 
-  const handleSend = async (textToSend: string) => {
-    if (!textToSend.trim()) return
+    const SYSTEM_PROMPT = `Tu es Jack, Chef d'Atelier expert.
+RÈGLE ABSOLUE : Sois BREF, RADICAL et PRÉCIS. Style télégraphique. AUCUNE explication théorique inutile.
 
-    const newMessages = [...messages, { role: "user", content: textToSend }]
-    setMessages(newMessages)
-    setInput("")
-    setLoading(true)
+Structure TOUTES tes réponses d'analyse selon ces règles :
+1. CAUSES : Cite les 3 causes physiques les plus probables liées à cette motorisation exacte et au kilométrage renseigné.
+2. TEST IMMÉDIAT : Donne un protocole de mesure physique (ex: Pique Pin 3, cible 5V).
+3. ATTENTE : Attends toujours le retour du mécano (Conforme / Non conforme) pour poursuivre l'arbre de diagnostic.
 
-    try {
-      const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
-      if (apiMessages.length === 1) {
-        apiMessages[0].content = `[CONTEXTE ATELIER : Véhicule ${vehicle || 'Non précisé'} (Plaque: ${plate || 'Non précisée'}), Kilométrage: ${mileage || 'Non précisé'} km, DTC: ${dtc || 'Non précisé'}, Symptômes: ${symptoms || 'Non précisés'}] \n\n${apiMessages[0].content}`
-      }
+RÈGLES SPÉCIALES "NIVEAU 1" À APPLIQUER :
+- MODE INTERVENTION LOURDE : Si la demande implique une distribution, un calage ou une culasse, bascule automatiquement en format "Checklist" (fournis repères de pigeage, sens de rotation, couples de serrage stricts).
+- CHECKLIST PRÉVENTIF (VENTE ADDITIONNELLE) : Si le technicien mentionne une usure (ex: "plaquettes à 70%") ou si le kilométrage est élevé (> 120 000 km), génère une courte liste à puces "À PRÉVOIR" (ex: pneumatiques, FAP, courroie) pour aider le garage à vendre.
+- COLLECTE DE DONNÉES : À la toute fin d'un diagnostic réussi, demande conversationnellement au mécanicien la prochaine échéance d'entretien (ou s'il manque le kilométrage, demande-le) pour préparer nos rappels SMS.`
 
-      const res = await fetch("/api/diag", {
+    const geminiMessages = messages.map((msg: any) => ({
+      role: msg.role === "user" ? "user" : "model",
+      parts: [{ text: msg.content }]
+    }))
+
+    // Remplacement strict par la version 2.5 Flash
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages })
-      })
-      
-      const data = await res.json()
-      setMessages(prev => [...prev, { role: "assistant", content: data.error ? `Erreur: ${data.error}` : data.response }])
-    } catch (err) {
-      setMessages(prev => [...prev, { role: "assistant", content: "Erreur de connexion au réseau de l'atelier." }])
-    } finally {
-      setLoading(false)
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: geminiMessages
+        })
+      }
+    )
+
+    const data = await response.json()
+    if (!response.ok || data.error) {
+      return NextResponse.json({ error: data.error?.message || "Erreur de l'API Google." }, { status: 500 })
     }
+
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Diagnostic généré."
+    return NextResponse.json({ response: reply })
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Erreur serveur Vercel." }, { status: 500 })
   }
-
-  const getYoutubeLink = () => `https://www.youtube.com/results?search_query=tuto+reparation+${encodeURIComponent(vehicle)}+${encodeURIComponent(dtc)}`
-  const getPartsLink = () => `https://www.auto-doc.fr/search?keyword=${encodeURIComponent(vehicle)}+${encodeURIComponent(dtc)}`
-
-  return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans max-w-2xl mx-auto shadow-2xl">
-      <header className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900/80">
-        <div className="flex items-center gap-2 font-bold text-lg text-blue-400">
-          <Wrench className="w-5 h-5" /> Jack Copilot
-        </div>
-        <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-1 rounded font-mono">Niveau 1 Actif</span>
-      </header>
-
-      <section className="p-4 bg-slate-900 border-b border-slate-800 flex flex-col gap-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input type="text" value={plate} onChange={e => setPlate(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono uppercase w-full text-blue-400 text-sm focus:border-blue-500 pr-10" placeholder="Ex: AA-123-BB"/>
-            <Camera className="w-4 h-4 text-slate-500 absolute right-3 top-3 cursor-pointer hover:text-blue-400 transition" />
-          </div>
-          <div className="relative flex-[2]">
-            <input type="text" value={vehicle} onChange={e => setVehicle(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm w-full focus:border-blue-500 pr-10" placeholder="Ex: Peugeot 3008 1.5 BlueHDi"/>
-            <Car className="w-4 h-4 text-slate-500 absolute right-3 top-3 pointer-events-none" />
-          </div>
-          <div className="relative flex-1">
-            <input type="number" value={mileage} onChange={e => setMileage(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm w-full text-emerald-400 focus:border-emerald-500 pr-10" placeholder="Km réel"/>
-            <Camera className="w-4 h-4 text-slate-500 absolute right-3 top-3 cursor-pointer hover:text-emerald-400 transition" />
-          </div>
-        </div>
-
-        <div className="flex gap-2">
-          <input type="text" value={dtc} onChange={e => setDtc(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono text-sm w-28 text-amber-400 font-bold focus:border-amber-500" placeholder="Ex: P0234"/>
-          <input type="text" value={symptoms} onChange={e => setSymptoms(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm flex-1 focus:border-blue-500" placeholder="Ex: Perte de puissance"/>
-        </div>
-        
-        {messages.length === 0 && (
-          <button onClick={() => handleSend("J'ai ce véhicule en atelier. Par quoi on commence ?")} className="mt-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition shadow-lg shadow-blue-900/30">
-            <ShieldCheck className="w-5 h-5" /> Lancer le diagnostic IA
-          </button>
-        )}
-      </section>
-
-      <section className="flex-1 overflow-y-auto p-4 flex flex-col gap-5 min-h-[300px]">
-        {messages.length === 0 && (
-          <div className="text-center text-slate-500 text-sm mt-auto mb-auto">Le diagnostic pas-à-pas s'affichera ici.</div>
-        )}
-        
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "self-end items-end" : "self-start items-start"}`}>
-            <span className="text-[10px] text-slate-500 mb-1 uppercase tracking-wider">{msg.role === "user" ? "Vous" : "Jack (Chef d'Atelier)"}</span>
-            <div className={`p-3.5 rounded-lg text-sm whitespace-pre-wrap leading-relaxed ${msg.role === "user" ? "bg-blue-600 text-white rounded-tr-none" : "bg-slate-800 border border-slate-700 text-slate-200 rounded-tl-none"}`}>
-              {msg.content}
-            </div>
-            
-            {msg.role === "assistant" && !msg.content.includes("Erreur") && (
-              <div className="flex gap-2 mt-2">
-                <a href={getYoutubeLink()} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] font-semibold bg-red-950/50 text-red-400 border border-red-900/50 px-2 py-1.5 rounded hover:bg-red-900/50 transition">
-                  <Video className="w-3 h-3" /> Tuto Vidéo
-                </a>
-                <a href={getPartsLink()} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] font-semibold bg-amber-950/50 text-amber-400 border border-amber-900/50 px-2 py-1.5 rounded hover:bg-amber-900/50 transition">
-                  <ShoppingCart className="w-3 h-3" /> Pièces Associées
-                </a>
-              </div>
-            )}
-          </div>
-        ))}
-        
-        {loading && (
-          <div className="self-start flex items-center gap-2 text-slate-400 text-sm p-3 bg-slate-800/50 rounded-lg">
-            <RefreshCw className="w-4 h-4 animate-spin text-blue-400" /> Jack consulte la base de données...
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </section>
-
-      <section className="p-4 bg-slate-900 border-t border-slate-800">
-        <div className="flex gap-2">
-          <input 
-            type="text" 
-            value={input} 
-            onChange={(e) => setInput(e.target.value)} 
-            onKeyDown={(e) => e.key === "Enter" && handleSend(input)} 
-            placeholder="Ex: J'ai mesuré 5V, on fait quoi ? ou Plaquettes usées à 70%..." 
-            className="bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-sm flex-1 text-slate-200 focus:outline-none focus:border-blue-500"
-          />
-          <button 
-            onClick={() => handleSend(input)} 
-            disabled={loading || !input.trim()} 
-            className="bg-emerald-600 disabled:bg-slate-800 hover:bg-emerald-500 text-white p-3 rounded-lg flex justify-center items-center transition shadow-md"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
-      </section>
-    </main>
-  )
 }
