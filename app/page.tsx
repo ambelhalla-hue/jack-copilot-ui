@@ -3,11 +3,12 @@ import { useState, useRef, useEffect } from "react"
 import { ShieldCheck, Wrench, Send, RefreshCw, Camera, Video, ShoppingCart, Car } from "lucide-react"
 
 export default function Home() {
-  const [plate, setPlate] = useState("AA-123-BB")
-  const [vehicle, setVehicle] = useState("Peugeot 3008 II - 1.5 BlueHDi")
+  // Les champs sont maintenant VIDES par défaut. Le texte "AA-123-BB" sera juste un texte fantôme (placeholder).
+  const [plate, setPlate] = useState("")
+  const [vehicle, setVehicle] = useState("")
   const [mileage, setMileage] = useState("")
-  const [dtc, setDtc] = useState("P0234")
-  const [symptoms, setSymptoms] = useState("Perte de puissance sous charge")
+  const [dtc, setDtc] = useState("")
+  const [symptoms, setSymptoms] = useState("")
   
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState("")
@@ -29,7 +30,7 @@ export default function Home() {
     try {
       const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
       if (apiMessages.length === 1) {
-        apiMessages[0].content = `[CONTEXTE ATELIER : Véhicule ${vehicle} (Plaque: ${plate}), Kilométrage: ${mileage || 'Non précisé'} km, DTC: ${dtc}, Symptômes: ${symptoms}] \n\n${apiMessages[0].content}`
+        apiMessages[0].content = `[CONTEXTE ATELIER : Véhicule ${vehicle || 'Non précisé'} (Plaque: ${plate || 'Non précisée'}), Kilométrage: ${mileage || 'Non précisé'} km, DTC: ${dtc || 'Non précisé'}, Symptômes: ${symptoms || 'Non précisés'}] \n\n${apiMessages[0].content}`
       }
 
       const res = await fetch("/api/diag", {
@@ -62,11 +63,11 @@ export default function Home() {
       <section className="p-4 bg-slate-900 border-b border-slate-800 flex flex-col gap-3">
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <input type="text" value={plate} onChange={e => setPlate(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono uppercase w-full text-blue-400 text-sm focus:border-blue-500 pr-10" placeholder="Plaque"/>
+            <input type="text" value={plate} onChange={e => setPlate(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono uppercase w-full text-blue-400 text-sm focus:border-blue-500 pr-10" placeholder="Ex: AA-123-BB"/>
             <Camera className="w-4 h-4 text-slate-500 absolute right-3 top-3 cursor-pointer hover:text-blue-400 transition" />
           </div>
           <div className="relative flex-[2]">
-            <input type="text" value={vehicle} onChange={e => setVehicle(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm w-full focus:border-blue-500 pr-10" placeholder="Modèle et Motorisation"/>
+            <input type="text" value={vehicle} onChange={e => setVehicle(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm w-full focus:border-blue-500 pr-10" placeholder="Ex: Peugeot 3008 1.5 BlueHDi"/>
             <Car className="w-4 h-4 text-slate-500 absolute right-3 top-3 pointer-events-none" />
           </div>
           <div className="relative flex-1">
@@ -76,8 +77,8 @@ export default function Home() {
         </div>
 
         <div className="flex gap-2">
-          <input type="text" value={dtc} onChange={e => setDtc(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono text-sm w-28 text-amber-400 font-bold focus:border-amber-500" placeholder="Code DTC"/>
-          <input type="text" value={symptoms} onChange={e => setSymptoms(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm flex-1 focus:border-blue-500" placeholder="Symptômes constatés"/>
+          <input type="text" value={dtc} onChange={e => setDtc(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono text-sm w-28 text-amber-400 font-bold focus:border-amber-500" placeholder="Ex: P0234"/>
+          <input type="text" value={symptoms} onChange={e => setSymptoms(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm flex-1 focus:border-blue-500" placeholder="Ex: Perte de puissance"/>
         </div>
         
         {messages.length === 0 && (
