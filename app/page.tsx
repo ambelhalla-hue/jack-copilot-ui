@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef, useEffect } from "react"
-import { ShieldCheck, Wrench, Send, RefreshCw, Camera, Youtube, ShoppingCart, Car } from "lucide-react"
+import { ShieldCheck, Wrench, Send, RefreshCw, Camera, Video, ShoppingCart, Car } from "lucide-react"
 
 export default function Home() {
   const [plate, setPlate] = useState("AA-123-BB")
@@ -28,7 +28,6 @@ export default function Home() {
 
     try {
       const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
-      // Injection du contexte invisible pour le premier message
       if (apiMessages.length === 1) {
         apiMessages[0].content = `[CONTEXTE ATELIER : Véhicule ${vehicle} (Plaque: ${plate}), Kilométrage: ${mileage || 'Non précisé'} km, DTC: ${dtc}, Symptômes: ${symptoms}] \n\n${apiMessages[0].content}`
       }
@@ -48,7 +47,6 @@ export default function Home() {
     }
   }
 
-  // Générateurs de liens intelligents pour la Boîte à Outils
   const getYoutubeLink = () => `https://www.youtube.com/results?search_query=tuto+reparation+${encodeURIComponent(vehicle)}+${encodeURIComponent(dtc)}`
   const getPartsLink = () => `https://www.auto-doc.fr/search?keyword=${encodeURIComponent(vehicle)}+${encodeURIComponent(dtc)}`
 
@@ -61,7 +59,6 @@ export default function Home() {
         <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-1 rounded font-mono">Niveau 1 Actif</span>
       </header>
 
-      {/* Bandeau de Saisie Rapide (Préparé pour OCR) */}
       <section className="p-4 bg-slate-900 border-b border-slate-800 flex flex-col gap-3">
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -90,7 +87,6 @@ export default function Home() {
         )}
       </section>
 
-      {/* Zone de Chat Interactive */}
       <section className="flex-1 overflow-y-auto p-4 flex flex-col gap-5 min-h-[300px]">
         {messages.length === 0 && (
           <div className="text-center text-slate-500 text-sm mt-auto mb-auto">Le diagnostic pas-à-pas s'affichera ici.</div>
@@ -103,11 +99,10 @@ export default function Home() {
               {msg.content}
             </div>
             
-            {/* Boîte à outils contextuelle */}
             {msg.role === "assistant" && !msg.content.includes("Erreur") && (
               <div className="flex gap-2 mt-2">
                 <a href={getYoutubeLink()} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] font-semibold bg-red-950/50 text-red-400 border border-red-900/50 px-2 py-1.5 rounded hover:bg-red-900/50 transition">
-                  <Youtube className="w-3 h-3" /> Tuto Vidéo
+                  <Video className="w-3 h-3" /> Tuto Vidéo
                 </a>
                 <a href={getPartsLink()} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] font-semibold bg-amber-950/50 text-amber-400 border border-amber-900/50 px-2 py-1.5 rounded hover:bg-amber-900/50 transition">
                   <ShoppingCart className="w-3 h-3" /> Pièces Associées
@@ -125,7 +120,6 @@ export default function Home() {
         <div ref={messagesEndRef} />
       </section>
 
-      {/* Barre de saisie "Mains Libres" */}
       <section className="p-4 bg-slate-900 border-t border-slate-800">
         <div className="flex gap-2">
           <input 
