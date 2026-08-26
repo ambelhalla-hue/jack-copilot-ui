@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef, useEffect } from "react"
-import { ShieldCheck, Wrench, Send, RefreshCw, Camera, Video, ShoppingCart, Car, Cpu } from "lucide-react"
+import { ShieldCheck, Wrench, Send, RefreshCw, Camera, Video, ShoppingCart, Car, Cpu, Mic, MicOff } from "lucide-react"
 
 export default function Home() {
   const [plate, setPlate] = useState("")
@@ -12,6 +12,7 @@ export default function Home() {
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
+  const [isListening, setIsListening] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -47,6 +48,37 @@ export default function Home() {
     }
   }
 
+  // --- FONCTION DE DICTÉE VOCALE ---
+  const toggleListening = () => {
+    if (isListening) {
+      setIsListening(false)
+      return
+    }
+    
+    // @ts-ignore : Compatibilité des navigateurs
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert("Votre navigateur ne supporte pas la dictée vocale. Utilisez Chrome ou Safari.")
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'fr-FR'
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+
+    recognition.onstart = () => setIsListening(true)
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript
+      setInput(prev => prev + (prev ? " " : "") + transcript)
+      setIsListening(false)
+    }
+    recognition.onerror = () => setIsListening(false)
+    recognition.onend = () => setIsListening(false)
+    
+    recognition.start()
+  }
+
   const extractPiece = (text: string) => {
     const match = text.match(/\[PIECE_CIBLE:\s*(.+?)\]/i)
     return match ? match[1].trim() : dtc
@@ -68,7 +100,6 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-2xl mx-auto shadow-2xl relative selection:bg-blue-500/30">
       
-      {/* HEADER: Glassmorphism effect */}
       <header className="sticky top-0 z-50 flex justify-between items-center p-4 border-b border-white/5 bg-[#0B0F17]/70 backdrop-blur-md shadow-sm">
         <div className="flex items-center gap-2 font-extrabold text-xl text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 tracking-tight">
           <Cpu className="w-6 h-6 text-cyan-400" /> Jack Copilot
@@ -82,7 +113,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* DASHBOARD INPUTS: Premium Cards */}
       <section className="p-5 flex flex-col gap-4 bg-gradient-to-b from-white/[0.02] to-transparent border-b border-white/5">
         <div className="flex gap-3">
           <div className="relative flex-1 group">
@@ -111,7 +141,6 @@ export default function Home() {
         )}
       </section>
 
-      {/* CHAT AREA */}
       <section className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 min-h-[300px] scroll-smooth">
         {messages.length === 0 && (
           <div className="text-center text-slate-500/60 text-sm mt-auto mb-auto font-medium">
@@ -147,17 +176,24 @@ export default function Home() {
         <div ref={messagesEndRef} />
       </section>
 
-      {/* FOOTER INPUT */}
       <section className="p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/5">
         <div className="flex gap-2 relative">
+          <button 
+            onClick={toggleListening} 
+            className={`p-3.5 rounded-xl flex justify-center items-center transition-all ${isListening ? 'bg-red-500/20 text-red-500 border border-red-500/50 animate-pulse' : 'bg-[#1A2332] text-slate-400 hover:text-blue-400 border border-slate-700/60'}`}
+          >
+            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+          </button>
+          
           <input 
             type="text" 
             value={input} 
             onChange={(e) => setInput(e.target.value)} 
             onKeyDown={(e) => e.key === "Enter" && handleSend(input)} 
-            placeholder="Ex: J'ai mesuré 5V, on fait quoi ?" 
+            placeholder={isListening ? "Jack vous écoute..." : "Ex: J'ai mesuré 5V, on fait quoi ?"} 
             className="bg-[#111827] border border-slate-700/60 rounded-xl px-5 py-3.5 text-sm flex-1 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-inner"
           />
+          
           <button 
             onClick={() => handleSend(input)} 
             disabled={loading || !input.trim()} 
