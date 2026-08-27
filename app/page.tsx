@@ -1,208 +1,250 @@
 "use client"
-import { useState, useRef, useEffect } from "react"
-import { ShieldCheck, Wrench, Send, RefreshCw, Camera, Video, ShoppingCart, Car, Cpu, Mic, MicOff } from "lucide-react"
 
-export default function Home() {
-  const [plate, setPlate] = useState("")
-  const [vehicle, setVehicle] = useState("")
-  const [mileage, setMileage] = useState("")
-  const [dtc, setDtc] = useState("")
-  const [symptoms, setSymptoms] = useState("")
-  
-  const [messages, setMessages] = useState<{role: string, content: string}[]>([])
-  const [input, setInput] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [isListening, setIsListening] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+import { useState } from "react"
+import { 
+  ShieldCheck, 
+  Wrench, 
+  CheckCircle2, 
+  Square, 
+  CheckSquare2, 
+  Edit3, 
+  Send, 
+  Car, 
+  Clock, 
+  PackageCheck, 
+  Droplet, 
+  Layers 
+} from "lucide-react"
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+export default function ChecklistChefAtelier() {
+  // Véhicule & Opération
+  const vehicle = "Peugeot 308 II - 1.5 BlueHDi 130 (DV5RC)"
+  const operation = "Remplacement Boîte de Vitesses & Embrayage"
+  const immat = "AA-123-BB"
 
-  const handleSend = async (textToSend: string) => {
-    if (!textToSend.trim()) return
+  // États des blocs validés
+  const [checkedBlocks, setCheckedBlocks] = useState({
+    mainParts: false,
+    peripherals: false,
+    labor: false,
+  })
 
-    const newMessages = [...messages, { role: "user", content: textToSend }]
-    setMessages(newMessages)
-    setInput("")
-    setLoading(true)
+  // États d'envoi
+  const [isTransmitted, setIsTransmitted] = useState(false)
 
-    try {
-      const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
-      if (apiMessages.length === 1) {
-        apiMessages[0].content = `[CONTEXTE ATELIER : Véhicule ${vehicle || 'Non précisé'} (Plaque: ${plate || 'Non précisée'}), Kilométrage: ${mileage || 'Non précisé'} km, DTC: ${dtc || 'Non précisé'}, Symptômes: ${symptoms || 'Non précisés'}] \n\n${apiMessages[0].content}`
-      }
-
-      const res = await fetch("/api/diag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages })
-      })
-      
-      const data = await res.json()
-      setMessages(prev => [...prev, { role: "assistant", content: data.error ? `Erreur: ${data.error}` : data.response }])
-    } catch (err) {
-      setMessages(prev => [...prev, { role: "assistant", content: "Erreur de connexion au réseau de l'atelier." }])
-    } finally {
-      setLoading(false)
-    }
+  // Bascule de validation par bloc
+  const toggleBlock = (blockKey: "mainParts" | "peripherals" | "labor") => {
+    setCheckedBlocks(prev => ({ ...prev, [blockKey]: !prev[blockKey] }))
   }
 
-  // --- FONCTION DE DICTÉE VOCALE ---
-  const toggleListening = () => {
-    if (isListening) {
-      setIsListening(false)
-      return
-    }
-    
-    // @ts-ignore : Compatibilité des navigateurs
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      alert("Votre navigateur ne supporte pas la dictée vocale. Utilisez Chrome ou Safari.")
-      return
-    }
+  // Vérifie si tout est validé
+  const allValidated = checkedBlocks.mainParts && checkedBlocks.peripherals && checkedBlocks.labor
 
-    const recognition = new SpeechRecognition()
-    recognition.lang = 'fr-FR'
-    recognition.interimResults = false
-    recognition.maxAlternatives = 1
-
-    recognition.onstart = () => setIsListening(true)
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript
-      setInput(prev => prev + (prev ? " " : "") + transcript)
-      setIsListening(false)
-    }
-    recognition.onerror = () => setIsListening(false)
-    recognition.onend = () => setIsListening(false)
-    
-    recognition.start()
-  }
-
-  const extractPiece = (text: string) => {
-    const match = text.match(/\[PIECE_CIBLE:\s*(.+?)\]/i)
-    return match ? match[1].trim() : dtc
-  }
-
-  const cleanText = (text: string) => {
-    return text.replace(/\[PIECE_CIBLE:\s*(.+?)\]/i, "").trim()
-  }
-
-  const getYoutubeLink = (text: string) => {
-    const searchTerms = `tuto reparation ${vehicle} ${extractPiece(text)} en francais`
-    return `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerms)}`
-  }
-  
-  const getPartsLink = (text: string) => {
-    return `https://www.auto-doc.fr/search?keyword=${encodeURIComponent(vehicle)}+${encodeURIComponent(extractPiece(text))}`
+  const handleTransmit = () => {
+    if (!allValidated) return
+    setIsTransmitted(true)
   }
 
   return (
-    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-2xl mx-auto shadow-2xl relative selection:bg-blue-500/30">
+    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-4 md:p-6 gap-5 selection:bg-blue-500/30">
       
-      <header className="sticky top-0 z-50 flex justify-between items-center p-4 border-b border-white/5 bg-[#0B0F17]/70 backdrop-blur-md shadow-sm">
-        <div className="flex items-center gap-2 font-extrabold text-xl text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 tracking-tight">
-          <Cpu className="w-6 h-6 text-cyan-400" /> Jack Copilot
+      {/* HEADER : Véhicule & Statut */}
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-blue-600/20 border border-blue-500/30 rounded-xl text-blue-400">
+            <Car className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
+                {immat}
+              </span>
+              <h1 className="font-bold text-slate-100 text-base md:text-lg">{vehicle}</h1>
+            </div>
+            <p className="text-xs font-medium text-cyan-400 mt-0.5">{operation}</p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+
+        <div className="flex items-center gap-2 self-end md:self-auto">
+          <span className="text-[11px] font-mono uppercase px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-full font-semibold flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5" /> Contrôle Chef d'Atelier
           </span>
-          <span className="text-xs font-mono text-emerald-400/90 uppercase tracking-widest font-semibold">Connecté</span>
         </div>
       </header>
 
-      <section className="p-5 flex flex-col gap-4 bg-gradient-to-b from-white/[0.02] to-transparent border-b border-white/5">
-        <div className="flex gap-3">
-          <div className="relative flex-1 group">
-            <input type="text" value={plate} onChange={e => setPlate(e.target.value.toUpperCase())} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 font-mono uppercase w-full text-blue-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all duration-300 pr-10 shadow-inner" placeholder="Plaque"/>
-            <Camera className="w-4 h-4 text-slate-500 absolute right-4 top-3.5 cursor-pointer group-hover:text-blue-400 transition-colors" />
-          </div>
-          <div className="relative flex-[2]">
-            <input type="text" value={vehicle} onChange={e => setVehicle(e.target.value)} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 text-sm w-full text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all duration-300 pr-10 shadow-inner" placeholder="Modèle et Motorisation"/>
-            <Car className="w-4 h-4 text-slate-500 absolute right-4 top-3.5 pointer-events-none" />
-          </div>
-          <div className="relative flex-1 group">
-            <input type="number" value={mileage} onChange={e => setMileage(e.target.value)} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 text-sm w-full font-mono text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition-all duration-300 pr-10 shadow-inner" placeholder="Km réel"/>
-            <Camera className="w-4 h-4 text-slate-500 absolute right-4 top-3.5 cursor-pointer group-hover:text-emerald-400 transition-colors" />
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <input type="text" value={dtc} onChange={e => setDtc(e.target.value.toUpperCase())} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 font-mono text-sm w-32 text-amber-400 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 transition-all duration-300 shadow-inner" placeholder="Ex: P0234"/>
-          <input type="text" value={symptoms} onChange={e => setSymptoms(e.target.value)} className="bg-[#111827] border border-slate-700/60 rounded-xl px-4 py-3 text-sm flex-1 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all duration-300 shadow-inner" placeholder="Symptômes constatés"/>
-        </div>
-        
-        {messages.length === 0 && (
-          <button onClick={() => handleSend("J'ai ce véhicule en atelier. Par quoi on commence ?")} className="mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-[0_0_20px_rgba(8,145,178,0.3)] hover:shadow-[0_0_30px_rgba(8,145,178,0.5)] border border-white/10 group">
-            <ShieldCheck className="w-5 h-5 group-hover:scale-110 transition-transform" /> Lancer le diagnostic IA
+      {/* MESSAGE SUCCÈS SI TRANSMIS */}
+      {isTransmitted ? (
+        <div className="p-6 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl text-center flex flex-col items-center gap-3 animate-in fade-in zoom-in duration-300">
+          <CheckCircle2 className="w-12 h-12 text-emerald-400 animate-bounce" />
+          <h2 className="text-lg font-bold text-emerald-300">Devis validé et transmis avec succès !</h2>
+          <p className="text-sm text-slate-300 max-w-md">
+            Le dossier a été notifié en temps réel au Conseiller Commercial Service (CCS) et le lien interactif a été envoyé au client par SMS.
+          </p>
+          <button 
+            onClick={() => setIsTransmitted(false)}
+            className="mt-2 text-xs text-slate-400 hover:text-white underline cursor-pointer"
+          >
+            Revenir à l'écran de contrôle
           </button>
-        )}
-      </section>
-
-      <section className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 min-h-[300px] scroll-smooth">
-        {messages.length === 0 && (
-          <div className="text-center text-slate-500/60 text-sm mt-auto mb-auto font-medium">
-            Entrez les paramètres du véhicule pour initialiser le système.
+        </div>
+      ) : (
+        <>
+          {/* INSTRUCTIONS */}
+          <div className="flex items-center justify-between px-1">
+            <p className="text-xs text-slate-400">
+              Vérifiez la conformité constructeur de chaque bloc avant transmission.
+            </p>
+            <span className="text-xs font-mono text-cyan-400">
+              {Object.values(checkedBlocks).filter(Boolean).length}/3 Blocs validés
+            </span>
           </div>
-        )}
-        
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`flex flex-col max-w-[88%] ${msg.role === "user" ? "self-end items-end" : "self-start items-start"}`}>
-            <span className="text-[10px] text-slate-500 mb-1.5 uppercase tracking-widest font-bold">{msg.role === "user" ? "Mécanicien" : "Jack (IA)"}</span>
-            <div className={`p-4 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed shadow-md ${msg.role === "user" ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-sm" : "bg-[#1A2332] border border-slate-700/50 text-slate-200 rounded-tl-sm shadow-[0_4px_20px_rgba(0,0,0,0.2)]"}`}>
-              {msg.role === "assistant" ? cleanText(msg.content) : msg.content}
-            </div>
-            
-            {msg.role === "assistant" && !msg.content.includes("Erreur") && (
-              <div className="flex gap-3 mt-3">
-                <a href={getYoutubeLink(msg.content)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-2 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm">
-                  <Video className="w-3.5 h-3.5" /> Tutoriel Vidéo
-                </a>
-                <a href={getPartsLink(msg.content)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-2 rounded-lg hover:bg-amber-500/20 transition-colors shadow-sm">
-                  <ShoppingCart className="w-3.5 h-3.5" /> Catalogue Pièces
-                </a>
+
+          {/* BLOC 1 : PIÈCES PRINCIPALES */}
+          <section 
+            onClick={() => toggleBlock("mainParts")}
+            className={`cursor-pointer transition-all duration-300 p-5 rounded-2xl border backdrop-blur-md flex flex-col gap-3.5 ${
+              checkedBlocks.mainParts 
+                ? "bg-emerald-950/15 border-emerald-500/60 shadow-[0_0_25px_rgba(16,185,129,0.15)]" 
+                : "bg-[#111827]/70 border-white/10 hover:border-slate-700 shadow-lg"
+            }`}
+          >
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2.5">
+                <PackageCheck className={`w-5 h-5 ${checkedBlocks.mainParts ? "text-emerald-400" : "text-blue-400"}`} />
+                <h2 className="font-bold text-sm md:text-base text-slate-100">
+                  Bloc 1 : Mécanique & Pièces Principales
+                </h2>
               </div>
-            )}
-          </div>
-        ))}
-        
-        {loading && (
-          <div className="self-start flex items-center gap-3 text-cyan-400 text-sm p-4 bg-[#1A2332]/80 backdrop-blur border border-cyan-900/30 rounded-2xl rounded-tl-sm shadow-lg">
-            <RefreshCw className="w-4 h-4 animate-spin" /> Traitement des données en cours...
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </section>
+              <div className="flex items-center gap-2">
+                {checkedBlocks.mainParts ? (
+                  <CheckSquare2 className="w-6 h-6 text-emerald-400" />
+                ) : (
+                  <Square className="w-6 h-6 text-slate-600 hover:text-slate-400" />
+                )}
+              </div>
+            </div>
 
-      <section className="p-4 bg-[#0B0F17]/90 backdrop-blur-md border-t border-white/5">
-        <div className="flex gap-2 relative">
-          <button 
-            onClick={toggleListening} 
-            className={`p-3.5 rounded-xl flex justify-center items-center transition-all ${isListening ? 'bg-red-500/20 text-red-500 border border-red-500/50 animate-pulse' : 'bg-[#1A2332] text-slate-400 hover:text-blue-400 border border-slate-700/60'}`}
+            <div className="space-y-2 text-xs font-mono">
+              <div className="flex justify-between items-center bg-[#0B0F17]/60 p-2.5 rounded-xl border border-white/5">
+                <span>1x Boîte de vitesses 6 rapports (Échange Standard)</span>
+                <span className="text-slate-400 flex items-center gap-2">Réf: 2231.XX <Edit3 className="w-3.5 h-3.5 text-blue-400 hover:text-cyan-300 cursor-pointer" /></span>
+              </div>
+              <div className="flex justify-between items-center bg-[#0B0F17]/60 p-2.5 rounded-xl border border-white/5">
+                <span>1x Kit d'embrayage avec mécanisme bi-masse</span>
+                <span className="text-slate-400 flex items-center gap-2">Réf: 2052.P3 <Edit3 className="w-3.5 h-3.5 text-blue-400 hover:text-cyan-300 cursor-pointer" /></span>
+              </div>
+            </div>
+          </section>
+
+          {/* BLOC 2 : PÉRIPHÉRIQUES & FLUIDES */}
+          <section 
+            onClick={() => toggleBlock("peripherals")}
+            className={`cursor-pointer transition-all duration-300 p-5 rounded-2xl border backdrop-blur-md flex flex-col gap-3.5 ${
+              checkedBlocks.peripherals 
+                ? "bg-emerald-950/15 border-emerald-500/60 shadow-[0_0_25px_rgba(16,185,129,0.15)]" 
+                : "bg-[#111827]/70 border-white/10 hover:border-slate-700 shadow-lg"
+            }`}
           >
-            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          </button>
-          
-          <input 
-            type="text" 
-            value={input} 
-            onChange={(e) => setInput(e.target.value)} 
-            onKeyDown={(e) => e.key === "Enter" && handleSend(input)} 
-            placeholder={isListening ? "Jack vous écoute..." : "Ex: J'ai mesuré 5V, on fait quoi ?"} 
-            className="bg-[#111827] border border-slate-700/60 rounded-xl px-5 py-3.5 text-sm flex-1 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-inner"
-          />
-          
-          <button 
-            onClick={() => handleSend(input)} 
-            disabled={loading || !input.trim()} 
-            className="bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-500 hover:bg-emerald-500 text-white p-3.5 rounded-xl flex justify-center items-center transition-all shadow-[0_0_15px_rgba(5,150,105,0.2)] hover:shadow-[0_0_20px_rgba(5,150,105,0.4)]"
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2.5">
+                <Droplet className={`w-5 h-5 ${checkedBlocks.peripherals ? "text-emerald-400" : "text-amber-400"}`} />
+                <h2 className="font-bold text-sm md:text-base text-slate-100">
+                  Bloc 2 : Périphériques & Fluides (Nomenclature Exhaustive)
+                </h2>
+              </div>
+              <div className="flex items-center gap-2">
+                {checkedBlocks.peripherals ? (
+                  <CheckSquare2 className="w-6 h-6 text-emerald-400" />
+                ) : (
+                  <Square className="w-6 h-6 text-slate-600 hover:text-slate-400" />
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs font-mono">
+              <div className="flex justify-between items-center bg-[#0B0F17]/60 p-2.5 rounded-xl border border-white/5">
+                <span>2x Joints à lèvres de sortie de pont (D/G)</span>
+                <span className="text-slate-400 flex items-center gap-2">Inclus <Edit3 className="w-3.5 h-3.5 text-blue-400 hover:text-cyan-300 cursor-pointer" /></span>
+              </div>
+              <div className="flex justify-between items-center bg-[#0B0F17]/60 p-2.5 rounded-xl border border-white/5">
+                <span>1x Butée hydraulique d'embrayage (CSC)</span>
+                <span className="text-slate-400 flex items-center gap-2">Inclus <Edit3 className="w-3.5 h-3.5 text-blue-400 hover:text-cyan-300 cursor-pointer" /></span>
+              </div>
+              <div className="flex justify-between items-center bg-[#0B0F17]/60 p-2.5 rounded-xl border border-white/5">
+                <span>2L Huile de transmission 75W-80 (Norme PSA B71 2330)</span>
+                <span className="text-slate-400 flex items-center gap-2">Bidons 2L <Edit3 className="w-3.5 h-3.5 text-blue-400 hover:text-cyan-300 cursor-pointer" /></span>
+              </div>
+              <div className="flex justify-between items-center bg-[#0B0F17]/60 p-2.5 rounded-xl border border-white/5">
+                <span>1x Kit visserie neuve volant moteur (Usage unique)</span>
+                <span className="text-slate-400 flex items-center gap-2">6 vis <Edit3 className="w-3.5 h-3.5 text-blue-400 hover:text-cyan-300 cursor-pointer" /></span>
+              </div>
+            </div>
+          </section>
+
+          {/* BLOC 3 : MAIN-D'ŒUVRE & TEMPS BARÉMÉ */}
+          <section 
+            onClick={() => toggleBlock("labor")}
+            className={`cursor-pointer transition-all duration-300 p-5 rounded-2xl border backdrop-blur-md flex flex-col gap-3.5 ${
+              checkedBlocks.labor 
+                ? "bg-emerald-950/15 border-emerald-500/60 shadow-[0_0_25px_rgba(16,185,129,0.15)]" 
+                : "bg-[#111827]/70 border-white/10 hover:border-slate-700 shadow-lg"
+            }`}
           >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
-      </section>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2.5">
+                <Clock className={`w-5 h-5 ${checkedBlocks.labor ? "text-emerald-400" : "text-cyan-400"}`} />
+                <h2 className="font-bold text-sm md:text-base text-slate-100">
+                  Bloc 3 : Main-d'Œuvre & Barèmes Constructeur
+                </h2>
+              </div>
+              <div className="flex items-center gap-2">
+                {checkedBlocks.labor ? (
+                  <CheckSquare2 className="w-6 h-6 text-emerald-400" />
+                ) : (
+                  <Square className="w-6 h-6 text-slate-600 hover:text-slate-400" />
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs font-mono">
+              <div className="flex justify-between items-center bg-[#0B0F17]/60 p-2.5 rounded-xl border border-white/5">
+                <span>Dépose / Repose Boîte de Vitesses</span>
+                <span className="text-emerald-400 font-bold">5,20 h</span>
+              </div>
+              <div className="flex justify-between items-center bg-[#0B0F17]/60 p-2.5 rounded-xl border border-white/5">
+                <span>Remplacement Embrayage & Volant Moteur</span>
+                <span className="text-emerald-400 font-bold">0,80 h</span>
+              </div>
+              <div className="flex justify-between items-center bg-[#0B0F17]/60 p-2.5 rounded-xl border border-white/5">
+                <span>Purge circuit hydraulique & Essai dynamique</span>
+                <span className="text-emerald-400 font-bold">0,50 h</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 px-1 font-sans text-xs">
+                <span className="text-slate-400">Total barémé : <strong className="text-slate-200">6,50 h</strong></span>
+                <span className="text-slate-400">Outillage : <strong className="text-cyan-300">Poutre support moteur + Pige</strong></span>
+              </div>
+            </div>
+          </section>
+
+          {/* BOUTON FINAL DE VALIDATION */}
+          <div className="pt-2">
+            <button
+              onClick={handleTransmit}
+              disabled={!allValidated}
+              className={`w-full py-4 px-6 rounded-2xl font-bold text-sm md:text-base flex items-center justify-center gap-2.5 transition-all duration-300 ${
+                allValidated 
+                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-[0_0_25px_rgba(16,185,129,0.4)] cursor-pointer scale-[1.01]" 
+                  : "bg-slate-800/60 border border-white/5 text-slate-500 cursor-not-allowed"
+              }`}
+            >
+              <Send className="w-5 h-5" />
+              {allValidated 
+                ? "Valider et transmettre au CCS (Envoi client)" 
+                : "Cochez les 3 blocs pour activer la transmission"}
+            </button>
+          </div>
+        </>
+      )}
     </main>
   )
 }
