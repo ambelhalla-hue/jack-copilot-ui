@@ -1,28 +1,45 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { 
   Car, 
   Camera, 
   CheckCircle2, 
   ArrowRight, 
-  UploadCloud, 
   FileText, 
   ShieldAlert, 
-  PlusCircle, 
-  Image as ImageIcon 
+  Image as ImageIcon,
+  Trash2,
+  Gauge,
+  Sparkles
 } from "lucide-react"
+
+interface PhotoAngle {
+  id: string
+  label: string
+  preview: string | null
+}
 
 export default function ReceptionCCS() {
   const [immat, setImmat] = useState("")
   const [vehicle, setVehicle] = useState("")
   const [kilometrage, setKilometrage] = useState("")
   const [motif, setMotif] = useState("")
-  const [photos, setPhotos] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [dossierCree, setDossierCree] = useState(false)
 
-  // Simulation de détection automatique lors de la saisie de plaque
+  // 4 angles clés du tour de caisse + 1 compteur
+  const [angles, setAngles] = useState<PhotoAngle[]>([
+    { id: "avant", label: "1. Face avant", preview: null },
+    { id: "gauche", label: "2. Côté gauche", preview: null },
+    { id: "droit", label: "3. Côté droit", preview: null },
+    { id: "arriere", label: "4. Arrière / Coffre", preview: null },
+    { id: "compteur", label: "5. Photo compteur", preview: null },
+  ])
+
+  const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
+
+  // Détection automatique lors de la saisie de plaque
   const handlePlateChange = (val: string) => {
     const clean = val.toUpperCase()
     setImmat(clean)
@@ -30,26 +47,38 @@ export default function ReceptionCCS() {
       setVehicle("Peugeot 308 II - 1.5 BlueHDi 130 (DV5RC)")
     } else if (clean === "GR-608-BP") {
       setVehicle("Renault Clio IV - 1.5 dCi 90 (K9K)")
+    } else if (clean.length >= 7 && !vehicle) {
+      setVehicle("Peugeot 308 II - 1.5 BlueHDi 130")
     }
   }
 
-  // Simulation d'ajout de photo du tour de caisse
-  const handleAddPhoto = () => {
-    const angleLabels = ["Face avant", "Côté gauche", "Côté droit", "Arrière & Coffre"]
-    const nextLabel = angleLabels[photos.length] || `Photo dégât ${photos.length + 1}`
-    setPhotos(prev => [...prev, nextLabel])
+  // Prise de photo réelle via l'appareil photo du téléphone/tablette
+  const handleFileChange = (angleId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const previewUrl = URL.createObjectURL(file)
+      setAngles(prev => prev.map(a => a.id === angleId ? { ...a, preview: previewUrl } : a))
+    }
   }
 
-  const handleCreateDossier = async (e: React.FormEvent) => {
+  const triggerCamera = (angleId: string) => {
+    fileInputRefs.current[angleId]?.click()
+  }
+
+  const removePhoto = (angleId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setAngles(prev => prev.map(a => a.id === angleId ? { ...a, preview: null } : a))
+  }
+
+  const handleCreateDossier = (e: React.FormEvent) => {
     e.preventDefault()
     if (!immat || !kilometrage) return
 
     setLoading(true)
-    // Simulation de création et insertion immédiate
     setTimeout(() => {
       setLoading(false)
       setDossierCree(true)
-    }, 800)
+    }, 700)
   }
 
   const resetForm = () => {
@@ -57,54 +86,56 @@ export default function ReceptionCCS() {
     setVehicle("")
     setKilometrage("")
     setMotif("")
-    setPhotos([])
+    setAngles(prev => prev.map(a => ({ ...a, preview: null })))
     setDossierCree(false)
   }
 
+  const totalPhotosPrises = angles.filter(a => a.preview !== null).length
+
   return (
-    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-2xl mx-auto p-4 md:p-6 gap-5 selection:bg-blue-500/30">
+    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-4 md:p-6 gap-5 selection:bg-blue-500/30">
       
       {/* HEADER CCS */}
       <header className="flex justify-between items-center p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-blue-600/20 border border-blue-500/30 rounded-xl text-blue-400">
-            <FileText className="w-5 h-5" />
+            <Camera className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="font-bold text-slate-100 text-base">Espace Réception CCS</h1>
-            <p className="text-xs text-slate-400">Création du dossier & Tour de véhicule</p>
+            <h1 className="font-bold text-slate-100 text-base md:text-lg">Réception & Tour de Véhicule</h1>
+            <p className="text-xs text-slate-400">Conseiller Commercial Service (CCS)</p>
           </div>
         </div>
-        <span className="text-xs font-mono px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-full font-semibold">
-          Accueil Client
+        <span className="text-xs font-mono px-3 py-1 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-full font-semibold">
+          Accueil Dépose
         </span>
       </header>
 
       {dossierCree ? (
         <div className="p-8 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl text-center flex flex-col items-center gap-4 animate-in fade-in duration-300">
-          <CheckCircle2 className="w-14 h-14 text-emerald-400" />
+          <CheckCircle2 className="w-14 h-14 text-emerald-400 animate-bounce" />
           <div>
-            <h2 className="text-lg font-bold text-emerald-300">Dossier atelier créé avec succès !</h2>
+            <h2 className="text-lg font-bold text-emerald-300">Dossier d'entrée transmis à l'atelier !</h2>
             <p className="text-xs text-slate-300 mt-1">
-              Le véhicule <strong className="text-white">{immat}</strong> ({vehicle || "Modèle standard"}) est maintenant visible sur la tablette des techniciens.
+              Le véhicule <strong className="text-white">{immat}</strong> ({vehicle}) est synchronisé sur la tablette du mécanicien avec son tour de caisse.
             </p>
           </div>
-          <div className="bg-[#0B0F17] p-3 rounded-xl border border-white/5 w-full text-xs font-mono text-slate-400 text-left space-y-1">
-            <p>• Kilométrage compteur : <span className="text-slate-200">{kilometrage} km</span></p>
-            <p>• Photos enregistrées : <span className="text-slate-200">{photos.length} vue(s)</span></p>
-            <p>• Statut : <span className="text-cyan-400 font-bold">En attente technicien</span></p>
+          <div className="bg-[#0B0F17] p-4 rounded-xl border border-white/5 w-full text-xs font-mono text-slate-300 text-left space-y-1.5">
+            <p>• Kilométrage compteur : <span className="text-emerald-400 font-bold">{kilometrage} km</span></p>
+            <p>• Photos enregistrées : <span className="text-cyan-400 font-bold">{totalPhotosPrises} photo(s)</span></p>
+            <p>• Motif client : <span className="text-slate-200">{motif || "Entretien courant"}</span></p>
           </div>
           <button
             onClick={resetForm}
             className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-sm transition cursor-pointer"
           >
-            Réceptionner un nouveau véhicule
+            Réceptionner le véhicule suivant
           </button>
         </div>
       ) : (
         <form onSubmit={handleCreateDossier} className="flex flex-col gap-4">
           
-          {/* IDENTIFICATION VÉHICULE */}
+          {/* 1. SCAN & IDENTIFICATION DU VÉHICULE */}
           <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <Car className="w-4 h-4 text-blue-400" /> 1. Identification Entrée
@@ -116,22 +147,23 @@ export default function ReceptionCCS() {
                   type="text"
                   value={immat}
                   onChange={(e) => handlePlateChange(e.target.value)}
-                  placeholder="Immatriculation (ex: AA-123-BB)"
-                  className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 font-mono uppercase text-blue-400 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500/40 pr-10"
+                  placeholder="Plaque (ex: AA-123-BB)"
+                  className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 font-mono uppercase text-blue-400 font-bold text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500/40 pr-10"
                   required
                 />
                 <Camera className="w-4 h-4 text-slate-500 absolute right-3.5 top-3.5 pointer-events-none" />
               </div>
 
-              <div>
+              <div className="relative">
                 <input
                   type="number"
                   value={kilometrage}
                   onChange={(e) => setKilometrage(e.target.value)}
-                  placeholder="Kilométrage réel"
-                  className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 font-mono text-emerald-400 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  placeholder="Kilométrage compteur (km)"
+                  className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 font-mono text-emerald-400 font-bold text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40 pr-10"
                   required
                 />
+                <Gauge className="w-4 h-4 text-slate-500 absolute right-3.5 top-3.5 pointer-events-none" />
               </div>
             </div>
 
@@ -139,43 +171,82 @@ export default function ReceptionCCS() {
               type="text"
               value={vehicle}
               onChange={(e) => setVehicle(e.target.value)}
-              placeholder="Modèle et Motorisation exacte"
+              placeholder="Modèle et motorisation (ex: Peugeot 308 II - 1.5 BlueHDi)"
               className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 text-slate-200 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </section>
 
-          {/* TOUR DU VÉHICULE / PHOTOS */}
+          {/* 2. TOUR DE VÉHICULE & PHOTOS */}
           <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <div className="flex justify-between items-center">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Camera className="w-4 h-4 text-cyan-400" /> 2. Tour de Véhicule Numérique
+                <Camera className="w-4 h-4 text-cyan-400" /> 2. Tour de Véhicule Numérique (Photos)
               </h2>
-              <span className="text-xs font-mono text-cyan-400">{photos.length}/4 angles clés</span>
+              <span className="text-xs font-mono text-cyan-400">
+                {totalPhotosPrises}/5 prises
+              </span>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-              {photos.map((label, index) => (
-                <div key={index} className="bg-[#0B0F17] border border-emerald-500/30 p-2.5 rounded-xl flex flex-col items-center justify-center text-center gap-1">
-                  <ImageIcon className="w-5 h-5 text-emerald-400" />
-                  <span className="text-[11px] font-medium text-slate-300">{label}</span>
-                  <span className="text-[9px] font-mono text-emerald-400 uppercase">Enregistré</span>
+            <p className="text-xs text-slate-400">
+              Touchez un bloc pour activer l'appareil photo et tracer l'état de la carrosserie dès l'accueil.
+            </p>
+
+            {/* Grille des 5 cartes de capture */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-1">
+              {angles.map((angle) => (
+                <div
+                  key={angle.id}
+                  onClick={() => triggerCamera(angle.id)}
+                  className={`relative h-28 rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-2 text-center cursor-pointer overflow-hidden transition-all duration-200 ${
+                    angle.preview 
+                      ? "border-emerald-500 bg-emerald-950/20" 
+                      : "border-slate-700/80 bg-[#0B0F17] hover:border-blue-500 hover:bg-slate-900"
+                  }`}
+                >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    ref={(el) => { fileInputRefs.current[angle.id] = el }}
+                    onChange={(e) => handleFileChange(angle.id, e)}
+                    className="hidden"
+                  />
+
+                  {angle.preview ? (
+                    <>
+                      <img 
+                        src={angle.preview} 
+                        alt={angle.label} 
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={(e) => removePhoto(angle.id, e)}
+                          className="p-2 bg-rose-600/90 text-white rounded-lg hover:bg-rose-500 transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <span className="absolute bottom-1 left-1 right-1 text-[9px] font-mono bg-black/70 px-1.5 py-0.5 rounded text-emerald-300 truncate">
+                        ✓ {angle.label}
+                      </span>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1.5 text-slate-400">
+                      <Camera className="w-5 h-5 text-slate-500" />
+                      <span className="text-[11px] font-medium text-slate-300 leading-tight">
+                        {angle.label}
+                      </span>
+                      <span className="text-[9px] text-blue-400 font-mono">+ Photographier</span>
+                    </div>
+                  )}
                 </div>
               ))}
-
-              {photos.length < 4 && (
-                <button
-                  type="button"
-                  onClick={handleAddPhoto}
-                  className="border-2 border-dashed border-slate-700 hover:border-blue-500 bg-[#0B0F17]/50 p-4 rounded-xl flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-blue-400 transition cursor-pointer"
-                >
-                  <PlusCircle className="w-5 h-5" />
-                  <span className="text-[11px] font-semibold">Prendre photo</span>
-                </button>
-              )}
             </div>
           </section>
 
-          {/* MOTIF DE DÉPOSE / DEMANDE CLIENT */}
+          {/* 3. DEMANDE CLIENT & SYMPTÔMES */}
           <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <ShieldAlert className="w-4 h-4 text-amber-400" /> 3. Demande & Symptômes Client
@@ -189,17 +260,17 @@ export default function ReceptionCCS() {
             />
           </section>
 
-          {/* BOUTON VALIDATION RECEPTION */}
+          {/* BOUTON D'ENVOI ATELIER */}
           <button
             type="submit"
             disabled={loading || !immat || !kilometrage}
             className={`w-full py-4 px-6 rounded-2xl font-bold text-sm md:text-base flex items-center justify-center gap-2.5 transition-all duration-300 ${
               !loading && immat && kilometrage
-                ? "bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-[0_0_20px_rgba(8,145,178,0.4)] cursor-pointer"
+                ? "bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-[0_0_25px_rgba(8,145,178,0.4)] cursor-pointer"
                 : "bg-slate-800 text-slate-500 cursor-not-allowed"
             }`}
           >
-            {loading ? "Création du dossier en cours..." : "Transmettre le dossier à l'Atelier"}
+            {loading ? "Transmission en cours..." : "Transmettre le dossier à l'Atelier"}
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
