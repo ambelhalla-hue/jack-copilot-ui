@@ -13,12 +13,11 @@ import {
   Mic,
   MicOff
 } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { insertDossierAtelier } from "@/lib/supabase"
 
 interface PhotoAngle {
   id: string
   label: string
-  file: File | null
   preview: string | null
 }
 
@@ -38,11 +37,11 @@ export default function ReceptionCCS() {
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
 
   const [angles, setAngles] = useState<PhotoAngle[]>([
-    { id: "avant", label: "1. Face avant", file: null, preview: null },
-    { id: "gauche", label: "2. Côté gauche", file: null, preview: null },
-    { id: "droit", label: "3. Côté droit", file: null, preview: null },
-    { id: "arriere", label: "4. Arrière / Coffre", file: null, preview: null },
-    { id: "compteur", label: "5. Photo compteur", file: null, preview: null },
+    { id: "avant", label: "1. Face avant", preview: null },
+    { id: "gauche", label: "2. Côté gauche", preview: null },
+    { id: "droit", label: "3. Côté droit", preview: null },
+    { id: "arriere", label: "4. Arrière / Coffre", preview: null },
+    { id: "compteur", label: "5. Photo compteur", preview: null },
   ])
 
   useEffect(() => {
@@ -126,7 +125,7 @@ export default function ReceptionCCS() {
     const file = e.target.files?.[0]
     if (file) {
       const previewUrl = URL.createObjectURL(file)
-      setAngles(prev => prev.map(a => a.id === angleId ? { ...a, file, preview: previewUrl } : a))
+      setAngles(prev => prev.map(a => a.id === angleId ? { ...a, preview: previewUrl } : a))
     }
   }
 
@@ -136,10 +135,9 @@ export default function ReceptionCCS() {
 
   const removePhoto = (angleId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    setAngles(prev => prev.map(a => a.id === angleId ? { ...a, file: null, preview: null } : a))
+    setAngles(prev => prev.map(a => a.id === angleId ? { ...a, preview: null } : a))
   }
 
-  // Enregistrement réel dans Supabase
   const handleCreateDossier = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!immat || !kilometrage) return
@@ -147,41 +145,17 @@ export default function ReceptionCCS() {
     setLoading(true)
 
     try {
-      const uploadedUrls: string[] = []
+      const photosArray = angles.map(a => a.label)
 
-      // 1. Upload des photos dans le bucket Storage
-      for (const angle of angles) {
-        if (angle.file) {
-          const fileExt = angle.file.name.split(".").pop() || "jpg"
-          const fileName = `${immat}_${angle.id}_${Date.now()}.${fileExt}`
-          const { error: uploadError } = await supabase.storage
-            .from("photos_atelier")
-            .upload(fileName, angle.file)
+      await insertDossierAtelier({
+        immatriculation: immat,
+        vin: vehicle,
+        kilometrage: parseInt(kilometrage, 10),
+        statut: "en_attente_tech",
+        photos_tour_vehicule: photosArray,
+        constats_technicien: motif || "Entretien / Contrôle standard"
+      })
 
-          if (!uploadError) {
-            const { data: publicData } = supabase.storage
-              .from("photos_atelier")
-              .getPublicUrl(fileName)
-            uploadedUrls.push(publicData.publicUrl)
-          }
-        }
-      }
-
-      // 2. Insertion dans la table dossiers_atelier
-      const { error: insertError } = await supabase
-        .from("dossiers_atelier")
-        .insert([
-          {
-            immatriculation: immat,
-            vin: vehicle,
-            kilometrage: parseInt(kilometrage, 10),
-            statut: "en_attente_tech",
-            photos_tour_vehicule: uploadedUrls,
-            constats_technicien: motif || "Entretien / Contrôle standard"
-          }
-        ])
-
-      if (insertError) throw insertError
       setDossierCree(true)
     } catch (err: any) {
       alert("Erreur lors de l'enregistrement dans Supabase : " + (err.message || err))
@@ -195,7 +169,7 @@ export default function ReceptionCCS() {
     setVehicle("")
     setKilometrage("")
     setMotif("")
-    setAngles(prev => prev.map(a => ({ ...a, file: null, preview: null })))
+    setAngles(prev => prev.map(a => ({ ...a, preview: null })))
     setDossierCree(false)
     setIsListening(false)
   }
@@ -232,7 +206,7 @@ export default function ReceptionCCS() {
           </div>
           <div className="bg-[#0B0F17] p-4 rounded-xl border border-white/5 w-full text-xs font-mono text-slate-300 text-left space-y-1.5">
             <p>• Kilométrage compteur : <span className="text-emerald-400 font-bold">{kilometrage} km</span></p>
-            <p>• Photos stockées : <span className="text-cyan-400 font-bold">{totalPhotosPrises} photo(s)</span></p>
+            <p>• Photos stockées : <span className="text-cyan-400 font-bold">{totalPhotosPrises} angle(s)</span></p>
             <p>• Statut : <span className="text-amber-400 font-bold">en_attente_tech</span></p>
           </div>
           <button
