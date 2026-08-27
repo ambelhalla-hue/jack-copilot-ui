@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from "react"
 import { 
   Wrench, 
-  Car, 
   Send, 
   RefreshCw, 
   CheckCircle2, 
@@ -15,18 +14,15 @@ import {
   MicOff,
   ArrowRight,
   Disc,
-  Battery,
-  CircleDot,
-  Image as ImageIcon,
   Trash2
 } from "lucide-react"
 
 export default function AtelierTech() {
   // Contexte véhicule
-  const [plate, setPlate] = useState("AA-123-BB")
-  const [vehicle, setVehicle] = useState("Peugeot 308 II - 1.5 BlueHDi 130 (DV5RC)")
-  const [mileage, setMileage] = useState("120000")
-  const [receptionMotif, setReceptionMotif] = useState("Bruit métallique lors des passages de rapports + à-coups")
+  const [plate] = useState("AA-123-BB")
+  const [vehicle] = useState("Peugeot 308 II - 1.5 BlueHDi 130 (DV5RC)")
+  const [mileage] = useState("120000")
+  const [receptionMotif] = useState("Bruit métallique lors des passages de rapports + à-coups")
 
   // Diagnostic Jack
   const [dtc, setDtc] = useState("P0234")
@@ -41,12 +37,14 @@ export default function AtelierTech() {
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<any>(null)
 
-  // Points de contrôle express (Checklist sécurité rapide)
+  // Points de contrôle express (Checklist sécurité complète)
   const [quickChecks, setQuickChecks] = useState({
     pneusAV: "bon",
     pneusAR: "bon",
-    freinsAV: "bon",
-    freinsAR: "bon",
+    plaquettesAV: "bon",
+    plaquettesAR: "bon",
+    disquesAV: "bon",
+    disquesAR: "bon",
     batterie: "bon",
   })
 
@@ -174,7 +172,7 @@ export default function AtelierTech() {
           immat: plate,
           kilometrage: mileage,
           panne_constatee: panneConstatee,
-          options_travaux: `Nomenclature complète. Contrôles : Freins AV ${quickChecks.freinsAV}, Batterie ${quickChecks.batterie}`
+          options_travaux: `Contrôles : Plaquettes AV ${quickChecks.plaquettesAV}, Disques AV ${quickChecks.disquesAV}, Plaquettes AR ${quickChecks.plaquettesAR}, Disques/Tambours AR ${quickChecks.disquesAR}, Batterie ${quickChecks.batterie}`
         })
       })
 
@@ -188,6 +186,16 @@ export default function AtelierTech() {
       setLoadingDevis(false)
     }
   }
+
+  const checkItems = [
+    { key: "pneusAV", label: "Pneus AV" },
+    { key: "pneusAR", label: "Pneus AR" },
+    { key: "plaquettesAV", label: "Plaquettes AV" },
+    { key: "disquesAV", label: "Disques AV" },
+    { key: "plaquettesAR", label: "Plaquettes AR" },
+    { key: "disquesAR", label: "Disques/Tambours AR" },
+    { key: "batterie", label: "Batterie 12V" },
+  ]
 
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-3 md:p-5 gap-4 selection:bg-blue-500/30">
@@ -217,29 +225,26 @@ export default function AtelierTech() {
 
       {/* 1. POINTS DE CONTRÔLE EXPRESS (USURE & SÉCURITÉ) */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-lg">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-          <Disc className="w-4 h-4 text-emerald-400" /> 1. Contrôles Express Sécurité
-        </h2>
+        <div className="flex justify-between items-center">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <Disc className="w-4 h-4 text-emerald-400" /> 1. Contrôles Express Sécurité
+          </h2>
+          <span className="text-[11px] text-slate-500">Cliquez pour alterner le statut</span>
+        </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
-          {[
-            { key: "pneusAV", label: "Pneus AV" },
-            { key: "pneusAR", label: "Pneus AR" },
-            { key: "freinsAV", label: "Plaquettes AV" },
-            { key: "freinsAR", label: "Plaquettes AR" },
-            { key: "batterie", label: "Batterie 12V" },
-          ].map((item) => {
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 text-xs">
+          {checkItems.map((item) => {
             const val = (quickChecks as any)[item.key]
             return (
-              <div key={item.key} className="bg-[#0B0F17] p-2 rounded-xl border border-white/5 flex flex-col gap-1.5">
-                <span className="text-[11px] text-slate-300 font-medium">{item.label}</span>
+              <div key={item.key} className="bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 flex flex-col justify-between gap-2">
+                <span className="text-[11px] text-slate-300 font-medium leading-tight">{item.label}</span>
                 <button
                   type="button"
                   onClick={() => {
                     const nextVal = val === "bon" ? "a_prevoir" : val === "a_prevoir" ? "urgent" : "bon"
                     setQuickChecks(prev => ({ ...prev, [item.key]: nextVal }))
                   }}
-                  className={`py-1 px-2 rounded text-[10px] font-mono font-bold uppercase transition cursor-pointer ${
+                  className={`py-1.5 px-2 rounded text-[10px] font-mono font-bold uppercase transition cursor-pointer text-center ${
                     val === "bon"
                       ? "bg-emerald-950/60 text-emerald-400 border border-emerald-800"
                       : val === "a_prevoir"
@@ -262,7 +267,6 @@ export default function AtelierTech() {
             <Layers className="w-4 h-4 text-blue-400" /> 2. Diagnostic & Mesures Jack
           </h2>
 
-          {/* Bouton photo Diagbox */}
           <div className="flex items-center gap-2">
             <input
               type="file"
@@ -282,7 +286,6 @@ export default function AtelierTech() {
           </div>
         </div>
 
-        {/* Aperçu des photos techniques */}
         {techPhotos.length > 0 && (
           <div className="flex gap-2 overflow-x-auto py-1">
             {techPhotos.map((url, i) => (
@@ -317,7 +320,6 @@ export default function AtelierTech() {
           />
         </div>
 
-        {/* Historique du Chat */}
         <div className="min-h-[140px] max-h-[220px] overflow-y-auto bg-[#0B0F17]/80 rounded-xl p-3 border border-white/5 flex flex-col gap-2.5 text-xs">
           {messages.length === 0 ? (
             <div className="text-slate-500 text-center my-auto">
@@ -342,7 +344,6 @@ export default function AtelierTech() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Multimètre & Boutons de mesure */}
         <div className="grid grid-cols-3 gap-2 items-center">
           <div className="bg-black border border-slate-800 rounded-xl p-2 text-center">
             <span className="text-[10px] text-slate-500 block">Multimètre</span>
@@ -364,7 +365,6 @@ export default function AtelierTech() {
           </button>
         </div>
 
-        {/* Input Chat Diag avec Mode Vocal */}
         <div className="flex gap-2">
           <input 
             type="text" 
