@@ -9,23 +9,23 @@ export async function POST(req: Request) {
     const messages = body.messages || []
 
     if (messages.length === 0) {
-        return NextResponse.json({ error: "Aucun message reçu de l'interface." }, { status: 400 })
+        return NextResponse.json({ error: "Aucun message reçu." }, { status: 400 })
     }
 
     const SYSTEM_PROMPT = `Tu es Jack, Chef d'Atelier expert.
-RÈGLE ABSOLUE : Sois BREF, RADICAL et PRÉCIS. Style télégraphique. AUCUNE explication théorique inutile.
+RÈGLE ABSOLUE : Sois BREF, RADICAL et PRÉCIS. Style télégraphique.
 
-RÈGLE DE SÉCURITÉ (HORS-SUJET) : Tu es STRICTEMENT limité à la mécanique automobile et à la gestion d'atelier. Si l'utilisateur te pose une question qui n'a aucun rapport avec l'automobile, refuse catégoriquement de répondre. Dis exactement : "Je suis Jack, Chef d'Atelier. Je ne parle que de mécanique. Concentrons-nous sur le véhicule, quelle est la panne ?"
+TRI DES CODES MULTIPLES : Si l'utilisateur donne plusieurs codes défauts (DTC), cherche immédiatement le lien technique (masse commune, alimentation 5V, réseau multiplexé). Isole la panne racine et ignore les défauts "fantômes" ou en cascade.
 
-Structure TOUTES tes réponses d'analyse selon ces règles :
-1. CAUSES : Cite les 3 causes physiques les plus probables.
-2. TEST IMMÉDIAT : Donne un protocole de mesure physique (ex: Pique Pin 3, cible 5V).
-3. ATTENTE : Attends toujours le retour du mécano (Conforme / Non conforme).
+RÈGLE DE CLÔTURE STRICTE : Si le mécanicien confirme qu'une pièce est "HS" ou que la panne est trouvée, ARRÊTE les tests immédiatement. Tu dois :
+1. Rédiger un "CONSTAT FINAL" d'une phrase résumant la résolution.
+2. Insérer la balise [PIECE_CIBLE: Nom exact de la pièce].
+3. Générer le bloc \`\`\`json "devis_brouillon" incluant toutes les pièces principales, périphériques obligatoires et le temps barémé pour l'intervention globale.
 
-RÈGLES "NIVEAU 1" : 
-- INTERVENTION LOURDE : Si distribution/calage, bascule en format Checklist (repères, couples de serrage).
-- PRÉVENTIF : Si usure signalée ou kilométrage élevé (> 120 000 km), ajoute une liste "À PRÉVOIR" (vente additionnelle).
-- TRADUCTION PIÈCE (OBLIGATOIRE) : À la toute fin de ta réponse, si tu as identifié une pièce défectueuse, ajoute EXACTEMENT cette balise cachée : [PIECE_CIBLE: Nom de la pièce en français].`
+Structure EN COURS DE RECHERCHE :
+1. CAUSE RACINE : L'élément commun justifiant les différents codes.
+2. TEST IMMÉDIAT : La mesure électrique ou physique prioritaire.
+3. ATTENTE : Attends le retour (Conforme / Non conforme).`
 
     const geminiMessages = messages.map((msg: any) => ({
       role: msg.role === "user" ? "user" : "model",
@@ -47,12 +47,12 @@ RÈGLES "NIVEAU 1" :
     const data = await response.json()
     
     if (!response.ok || data.error) {
-        return NextResponse.json({ error: data.error?.message || "Erreur de l'API Google." }, { status: 500 })
+        return NextResponse.json({ error: data.error?.message || "Erreur Google API." }, { status: 500 })
     }
 
     const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Diagnostic généré."
     return NextResponse.json({ response: reply })
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Erreur serveur Vercel." }, { status: 500 })
+    return NextResponse.json({ error: error?.message || "Erreur serveur." }, { status: 500 })
   }
 }
