@@ -7,17 +7,18 @@ import {
   CheckCircle2, 
   ArrowRight, 
   ShieldAlert, 
-  Image as ImageIcon,
   Trash2,
   Gauge,
   RefreshCw,
   Mic,
   MicOff
 } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 
 interface PhotoAngle {
   id: string
   label: string
+  file: File | null
   preview: string | null
 }
 
@@ -30,7 +31,6 @@ export default function ReceptionCCS() {
   const [isScanningPlate, setIsScanningPlate] = useState(false)
   const [dossierCree, setDossierCree] = useState(false)
 
-  // Gestion de la dictée vocale
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<any>(null)
 
@@ -38,14 +38,13 @@ export default function ReceptionCCS() {
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
 
   const [angles, setAngles] = useState<PhotoAngle[]>([
-    { id: "avant", label: "1. Face avant", preview: null },
-    { id: "gauche", label: "2. Côté gauche", preview: null },
-    { id: "droit", label: "3. Côté droit", preview: null },
-    { id: "arriere", label: "4. Arrière / Coffre", preview: null },
-    { id: "compteur", label: "5. Photo compteur", preview: null },
+    { id: "avant", label: "1. Face avant", file: null, preview: null },
+    { id: "gauche", label: "2. Côté gauche", file: null, preview: null },
+    { id: "droit", label: "3. Côté droit", file: null, preview: null },
+    { id: "arriere", label: "4. Arrière / Coffre", file: null, preview: null },
+    { id: "compteur", label: "5. Photo compteur", file: null, preview: null },
   ])
 
-  // Initialisation de la reconnaissance vocale Web Speech API
   useEffect(() => {
     if (typeof window !== "undefined") {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -67,7 +66,6 @@ export default function ReceptionCCS() {
             })
           }
         }
-
         recognition.onerror = () => setIsListening(false)
         recognition.onend = () => setIsListening(false)
         recognitionRef.current = recognition
@@ -76,11 +74,7 @@ export default function ReceptionCCS() {
   }, [])
 
   const toggleListening = () => {
-    if (!recognitionRef.current) {
-      alert("La dictée vocale n'est pas supportée par ce navigateur (privilégiez Chrome ou Safari mobile).")
-      return
-    }
-
+    if (!recognitionRef.current) return
     if (isListening) {
       recognitionRef.current.stop()
       setIsListening(false)
@@ -90,7 +84,6 @@ export default function ReceptionCCS() {
     }
   }
 
-  // Détection automatique lors de la saisie ou OCR
   const handlePlateChange = (val: string) => {
     const clean = val.toUpperCase().trim()
     setImmat(clean)
@@ -103,7 +96,6 @@ export default function ReceptionCCS() {
     }
   }
 
-  // Scan OCR de la plaque par photo
   const handleScanPlateFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -119,12 +111,8 @@ export default function ReceptionCCS() {
           body: JSON.stringify({ image: base64String })
         })
         const data = await res.json()
-        if (data.immatriculation) {
-          handlePlateChange(data.immatriculation)
-        }
-        if (data.modele_detecte && !vehicle) {
-          setVehicle(data.modele_detecte)
-        }
+        if (data.immatriculation) handlePlateChange(data.immatriculation)
+        if (data.modele_detecte && !vehicle) setVehicle(data.modele_detecte)
       } catch (err) {
         console.error(err)
       } finally {
@@ -138,7 +126,7 @@ export default function ReceptionCCS() {
     const file = e.target.files?.[0]
     if (file) {
       const previewUrl = URL.createObjectURL(file)
-      setAngles(prev => prev.map(a => a.id === angleId ? { ...a, preview: previewUrl } : a))
+      setAngles(prev => prev.map(a => a.id === angleId ? { ...a, file, preview: previewUrl } : a))
     }
   }
 
@@ -148,18 +136,58 @@ export default function ReceptionCCS() {
 
   const removePhoto = (angleId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    setAngles(prev => prev.map(a => a.id === angleId ? { ...a, preview: null } : a))
+    setAngles(prev => prev.map(a => a.id === angleId ? { ...a, file: null, preview: null } : a))
   }
 
-  const handleCreateDossier = (e: React.FormEvent) => {
+  // Enregistrement réel dans Supabase
+  const handleCreateDossier = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!immat || !kilometrage) return
 
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
+
+    try {
+      const uploadedUrls: string[] = []
+
+      // 1. Upload des photos dans le bucket Storage
+      for (const angle of angles) {
+        if (angle.file) {
+          const fileExt = angle.file.name.split(".").pop() || "jpg"
+          const fileName = `${immat}_${angle.id}_${Date.now()}.${fileExt}`
+          const { error: uploadError } = await supabase.storage
+            .from("photos_atelier")
+            .upload(fileName, angle.file)
+
+          if (!uploadError) {
+            const { data: publicData } = supabase.storage
+              .from("photos_atelier")
+              .getPublicUrl(fileName)
+            uploadedUrls.push(publicData.publicUrl)
+          }
+        }
+      }
+
+      // 2. Insertion dans la table dossiers_atelier
+      const { error: insertError } = await supabase
+        .from("dossiers_atelier")
+        .insert([
+          {
+            immatriculation: immat,
+            vin: vehicle,
+            kilometrage: parseInt(kilometrage, 10),
+            statut: "en_attente_tech",
+            photos_tour_vehicule: uploadedUrls,
+            constats_technicien: motif || "Entretien / Contrôle standard"
+          }
+        ])
+
+      if (insertError) throw insertError
       setDossierCree(true)
-    }, 700)
+    } catch (err: any) {
+      alert("Erreur lors de l'enregistrement dans Supabase : " + (err.message || err))
+    } finally {
+      setLoading(false)
+    }
   }
 
   const resetForm = () => {
@@ -167,7 +195,7 @@ export default function ReceptionCCS() {
     setVehicle("")
     setKilometrage("")
     setMotif("")
-    setAngles(prev => prev.map(a => ({ ...a, preview: null })))
+    setAngles(prev => prev.map(a => ({ ...a, file: null, preview: null })))
     setDossierCree(false)
     setIsListening(false)
   }
@@ -197,15 +225,15 @@ export default function ReceptionCCS() {
         <div className="p-8 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl text-center flex flex-col items-center gap-4 animate-in fade-in duration-300">
           <CheckCircle2 className="w-14 h-14 text-emerald-400 animate-bounce" />
           <div>
-            <h2 className="text-lg font-bold text-emerald-300">Dossier d'entrée transmis à l'atelier !</h2>
+            <h2 className="text-lg font-bold text-emerald-300">Dossier d'entrée enregistré sur Supabase !</h2>
             <p className="text-xs text-slate-300 mt-1">
-              Le véhicule <strong className="text-white">{immat}</strong> ({vehicle}) est synchronisé sur la tablette du mécanicien avec son tour de caisse.
+              Le véhicule <strong className="text-white">{immat}</strong> est synchronisé en base de données européenne pour l'atelier.
             </p>
           </div>
           <div className="bg-[#0B0F17] p-4 rounded-xl border border-white/5 w-full text-xs font-mono text-slate-300 text-left space-y-1.5">
             <p>• Kilométrage compteur : <span className="text-emerald-400 font-bold">{kilometrage} km</span></p>
-            <p>• Photos enregistrées : <span className="text-cyan-400 font-bold">{totalPhotosPrises} photo(s)</span></p>
-            <p>• Motif client : <span className="text-slate-200">{motif || "Entretien courant"}</span></p>
+            <p>• Photos stockées : <span className="text-cyan-400 font-bold">{totalPhotosPrises} photo(s)</span></p>
+            <p>• Statut : <span className="text-amber-400 font-bold">en_attente_tech</span></p>
           </div>
           <button
             onClick={resetForm}
@@ -217,7 +245,7 @@ export default function ReceptionCCS() {
       ) : (
         <form onSubmit={handleCreateDossier} className="flex flex-col gap-4">
           
-          {/* 1. SCAN & IDENTIFICATION DU VÉHICULE */}
+          {/* 1. IDENTIFICATION */}
           <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <Car className="w-4 h-4 text-blue-400" /> 1. Identification Entrée
@@ -273,12 +301,12 @@ export default function ReceptionCCS() {
               type="text"
               value={vehicle}
               onChange={(e) => setVehicle(e.target.value)}
-              placeholder="Modèle et motorisation (ex: Peugeot 308 II - 1.5 BlueHDi)"
+              placeholder="Modèle et motorisation"
               className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 text-slate-200 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </section>
 
-          {/* 2. TOUR DE VÉHICULE NUMÉRIQUE */}
+          {/* 2. PHOTOS DU TOUR DE CAISSE */}
           <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <div className="flex justify-between items-center">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -288,10 +316,6 @@ export default function ReceptionCCS() {
                 {totalPhotosPrises}/5 prises
               </span>
             </div>
-
-            <p className="text-xs text-slate-400">
-              Touchez un angle pour photographier l'état de la carrosserie.
-            </p>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-1">
               {angles.map((angle) => (
@@ -347,26 +371,25 @@ export default function ReceptionCCS() {
             </div>
           </section>
 
-          {/* 3. DEMANDE CLIENT AVEC DICTÉE VOCALE */}
+          {/* 3. SYMPTÔMES */}
           <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <div className="flex justify-between items-center">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <ShieldAlert className="w-4 h-4 text-amber-400" /> 3. Demande & Symptômes Client
               </h2>
 
-              {/* Bouton Micro Dictée */}
               <button
                 type="button"
                 onClick={toggleListening}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
                   isListening
-                    ? "bg-rose-600 text-white animate-pulse shadow-[0_0_15px_rgba(225,29,72,0.5)]"
+                    ? "bg-rose-600 text-white animate-pulse"
                     : "bg-slate-800 text-cyan-400 hover:bg-slate-700 border border-white/5"
                 }`}
               >
                 {isListening ? (
                   <>
-                    <MicOff className="w-4 h-4" /> Dictée en cours...
+                    <MicOff className="w-4 h-4" /> Dictée...
                   </>
                 ) : (
                   <>
@@ -379,13 +402,13 @@ export default function ReceptionCCS() {
             <textarea
               value={motif}
               onChange={(e) => setMotif(e.target.value)}
-              placeholder="Saisissez ou dictez la demande (ex: Révision des 120 000 km + bruit métallique au passage de rapports)..."
+              placeholder="Saisissez ou dictez la demande client..."
               className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[90px]"
               required
             />
           </section>
 
-          {/* BOUTON TRANSMISSION ATELIER */}
+          {/* TRANSMISSION */}
           <button
             type="submit"
             disabled={loading || !immat || !kilometrage}
@@ -395,7 +418,7 @@ export default function ReceptionCCS() {
                 : "bg-slate-800 text-slate-500 cursor-not-allowed"
             }`}
           >
-            {loading ? "Transmission en cours..." : "Transmettre le dossier à l'Atelier"}
+            {loading ? "Enregistrement sur Supabase..." : "Transmettre le dossier à l'Atelier"}
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
