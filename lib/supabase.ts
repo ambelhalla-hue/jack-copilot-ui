@@ -1,4 +1,5 @@
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+const supabaseUrl = rawUrl.replace(/\/+$/, "")
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 
 export async function insertDossierAtelier(data: {
