@@ -1,0 +1,292 @@
+"use client"
+
+import { useState, useRef, useEffect } from "react"
+import { 
+  Wrench, 
+  Car, 
+  Send, 
+  RefreshCw, 
+  CheckCircle2, 
+  AlertTriangle, 
+  FileText, 
+  Layers, 
+  Video, 
+  ShoppingCart,
+  Clock,
+  ArrowRight
+} from "lucide-react"
+
+export default function AtelierTech() {
+  // Contexte véhicule transmis par le CCS
+  const [plate, setPlate] = useState("AA-123-BB")
+  const [vehicle, setVehicle] = useState("Peugeot 308 II - 1.5 BlueHDi 130 (DV5RC)")
+  const [mileage, setMileage] = useState("120000")
+  const [receptionMotif, setReceptionMotif] = useState("Bruit métallique lors des passages de rapports + à-coups")
+
+  // Diagnostic Jack
+  const [dtc, setDtc] = useState("P0234")
+  const [symptoms, setSymptoms] = useState("Perte de puissance sous charge")
+  const [messages, setMessages] = useState<{role: string, content: string}[]>([])
+  const [input, setInput] = useState("")
+  const [loadingDiag, setLoadingDiag] = useState(false)
+  const [voltage, setVoltage] = useState("Attente de mesure...")
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Envoi au Chef d'Atelier
+  const [panneConstatee, setPanneConstatee] = useState("Remplacement boîte de vitesses 6 rapports et kit embrayage bi-masse")
+  const [loadingDevis, setLoadingDevis] = useState(false)
+  const [devisTransmis, setDevisTransmis] = useState(false)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
+
+  // Communication avec Jack Diag
+  const handleSend = async (textToSend: string) => {
+    if (!textToSend.trim()) return
+
+    const newMessages = [...messages, { role: "user", content: textToSend }]
+    setMessages(newMessages)
+    setInput("")
+    setLoadingDiag(true)
+
+    try {
+      const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
+      if (apiMessages.length === 1) {
+        apiMessages[0].content = `[CONTEXTE ATELIER : Véhicule ${vehicle} (${plate}), ${mileage} km, DTC: ${dtc}, Symptômes: ${symptoms}] \n\n${apiMessages[0].content}`
+      }
+
+      const res = await fetch("/api/diag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: apiMessages })
+      })
+      
+      const data = await res.json()
+      setMessages(prev => [...prev, { role: "assistant", content: data.error ? `Erreur: ${data.error}` : data.response }])
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "Erreur de connexion au serveur de diagnostic." }])
+    } finally {
+      setLoadingDiag(false)
+    }
+  }
+
+  const handleMeasure = (conform: boolean) => {
+    if (conform) {
+      setVoltage("5.02 V (Conforme)")
+      handleSend("Mesure conforme (5V). Faisceau et alimentation validés. Quelle est la suite ?")
+    } else {
+      setVoltage("0.04 V (Non conforme)")
+      handleSend("Mesure non conforme. Absence de tension relevée. Que vérifier ensuite ?")
+    }
+  }
+
+  // Génération du devis IA et transmission au Chef
+  const handleGenerateAndSendToChef = async () => {
+    if (!panneConstatee.trim()) return
+    setLoadingDevis(true)
+
+    try {
+      const res = await fetch("/api/devis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicle,
+          immat: plate,
+          kilometrage: mileage,
+          panne_constatee: panneConstatee,
+          options_travaux: "Nomenclature complète avec consommables et barèmes"
+        })
+      })
+
+      const data = await res.json()
+      if (!data.error) {
+        setDevisTransmis(true)
+      }
+    } catch {
+      alert("Erreur lors de la génération du devis.")
+    } finally {
+      setLoadingDevis(false)
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-3 md:p-5 gap-4 selection:bg-blue-500/30">
+      
+      {/* HEADER : DOSSIER VÉHICULE EN COURS */}
+      <header className="p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-cyan-600/20 border border-cyan-500/30 rounded-xl text-cyan-400">
+            <Wrench className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
+                {plate}
+              </span>
+              <h1 className="font-bold text-slate-100 text-sm md:text-base">{vehicle}</h1>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Compteur : <strong className="text-emerald-400">{mileage} km</strong> • Motif CCS : <span className="text-slate-300">{receptionMotif}</span>
+            </p>
+          </div>
+        </div>
+        <span className="text-[10px] font-mono uppercase px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded-full font-semibold self-end md:self-auto">
+          Poste Technicien
+        </span>
+      </header>
+
+      {/* ZONE 1 : DIAGNOSTIC INTERACTIF AVEC JACK */}
+      <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+          <Layers className="w-4 h-4 text-blue-400" /> 1. Recherche de Panne & Mesures
+        </h2>
+
+        <div className="flex gap-2">
+          <input 
+            type="text" 
+            value={dtc} 
+            onChange={e => setDtc(e.target.value.toUpperCase())} 
+            className="bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 font-mono text-xs w-28 text-amber-400 font-bold focus:border-amber-500" 
+            placeholder="Code DTC"
+          />
+          <input 
+            type="text" 
+            value={symptoms} 
+            onChange={e => setSymptoms(e.target.value)} 
+            className="bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 text-xs flex-1 text-slate-200 focus:border-blue-500" 
+            placeholder="Symptômes relevés"
+          />
+        </div>
+
+        {/* Historique du Chat */}
+        <div className="min-h-[160px] max-h-[240px] overflow-y-auto bg-[#0B0F17]/80 rounded-xl p-3 border border-white/5 flex flex-col gap-3 text-xs">
+          {messages.length === 0 ? (
+            <div className="text-slate-500 text-center my-auto">
+              Lancez le diagnostic pour guider vos contrôles pas-à-pas.
+            </div>
+          ) : (
+            messages.map((msg, idx) => (
+              <div key={idx} className={`flex flex-col max-w-[90%] ${msg.role === "user" ? "self-end items-end" : "self-start items-start"}`}>
+                <div className={`p-2.5 rounded-xl whitespace-pre-wrap leading-relaxed ${
+                  msg.role === "user" ? "bg-blue-600 text-white rounded-tr-none" : "bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700"
+                }`}>
+                  {msg.content}
+                </div>
+              </div>
+            ))
+          )}
+          {loadingDiag && (
+            <div className="text-cyan-400 flex items-center gap-1.5 text-[11px]">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Analyse des données...
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Multimètre & Boutons Rapides */}
+        <div className="grid grid-cols-3 gap-2 items-center">
+          <div className="bg-black border border-slate-800 rounded-xl p-2 text-center">
+            <span className="text-[10px] text-slate-500 block">Multimètre</span>
+            <div className="font-mono text-sm text-emerald-400 font-bold">{voltage}</div>
+          </div>
+          <button 
+            type="button"
+            onClick={() => handleMeasure(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" /> Conforme (5V)
+          </button>
+          <button 
+            type="button"
+            onClick={() => handleMeasure(false)}
+            className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" /> Non Conforme
+          </button>
+        </div>
+
+        {/* Input Chat Diag */}
+        <div className="flex gap-2">
+          <input 
+            type="text" 
+            value={input} 
+            onChange={(e) => setInput(e.target.value)} 
+            onKeyDown={(e) => e.key === "Enter" && handleSend(input)} 
+            placeholder="Poser une question ou préciser une usure..." 
+            className="bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 text-xs flex-1 text-slate-200 focus:border-blue-500"
+          />
+          <button 
+            type="button"
+            onClick={() => handleSend(input)} 
+            disabled={loadingDiag || !input.trim()} 
+            className="bg-blue-600 disabled:bg-slate-800 text-white px-3 py-2 rounded-xl text-xs font-bold cursor-pointer"
+          >
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </section>
+
+      {/* ZONE 2 : CONSTAT ATELIER & TRANSMISSION AU CHEF */}
+      <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+          <FileText className="w-4 h-4 text-emerald-400" /> 2. Constat Final & Chiffrage Automatique
+        </h2>
+
+        {devisTransmis ? (
+          <div className="p-5 bg-emerald-950/30 border border-emerald-500/30 rounded-xl text-center flex flex-col items-center gap-2">
+            <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+            <h3 className="font-bold text-sm text-emerald-300">Constat transmis au Chef d'Atelier !</h3>
+            <p className="text-xs text-slate-300">
+              L'agent IA a généré la nomenclature complète et calculé le temps barémé. Le dossier est en attente de validation sur l'écran du Chef.
+            </p>
+            <button
+              onClick={() => setDevisTransmis(false)}
+              className="text-[11px] text-slate-400 hover:text-white underline mt-1 cursor-pointer"
+            >
+              Modifier le constat
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="text-[11px] text-slate-400 block mb-1">
+                Intervention constatée à chiffrer :
+              </label>
+              <textarea
+                value={panneConstatee}
+                onChange={(e) => setPanneConstatee(e.target.value)}
+                rows={2}
+                className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3 text-xs text-slate-200 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40 font-mono"
+                placeholder="Ex: Remplacement boîte de vitesses + butée hydraulique..."
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGenerateAndSendToChef}
+              disabled={loadingDevis || !panneConstatee.trim()}
+              className={`py-3.5 px-4 rounded-xl font-bold text-xs md:text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
+                !loadingDevis && panneConstatee.trim()
+                  ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] cursor-pointer"
+                  : "bg-slate-800 text-slate-500 cursor-not-allowed"
+              }`}
+            >
+              {loadingDevis ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Génération de la nomenclature par l'IA...
+                </>
+              ) : (
+                <>
+                  Générer le devis IA & Transmettre au Chef d'Atelier
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </section>
+    </main>
+  )
+}
