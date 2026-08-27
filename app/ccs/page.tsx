@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { 
   Car, 
   Camera, 
@@ -10,7 +10,9 @@ import {
   Image as ImageIcon,
   Trash2,
   Gauge,
-  RefreshCw
+  RefreshCw,
+  Mic,
+  MicOff
 } from "lucide-react"
 
 interface PhotoAngle {
@@ -28,6 +30,10 @@ export default function ReceptionCCS() {
   const [isScanningPlate, setIsScanningPlate] = useState(false)
   const [dossierCree, setDossierCree] = useState(false)
 
+  // Gestion de la dictée vocale
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<any>(null)
+
   const plateCameraInputRef = useRef<HTMLInputElement>(null)
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
 
@@ -39,7 +45,52 @@ export default function ReceptionCCS() {
     { id: "compteur", label: "5. Photo compteur", preview: null },
   ])
 
-  // Détection automatique lors de la saisie ou de la reconnaissance OCR
+  // Initialisation de la reconnaissance vocale Web Speech API
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition()
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = "fr-FR"
+
+        recognition.onresult = (event: any) => {
+          let currentTranscript = ""
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            currentTranscript += event.results[i][0].transcript
+          }
+          if (currentTranscript.trim()) {
+            setMotif(prev => {
+              const base = prev ? prev.trim() + " " : ""
+              return base + currentTranscript
+            })
+          }
+        }
+
+        recognition.onerror = () => setIsListening(false)
+        recognition.onend = () => setIsListening(false)
+        recognitionRef.current = recognition
+      }
+    }
+  }, [])
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("La dictée vocale n'est pas supportée par ce navigateur (privilégiez Chrome ou Safari mobile).")
+      return
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop()
+      setIsListening(false)
+    } else {
+      recognitionRef.current.start()
+      setIsListening(true)
+    }
+  }
+
+  // Détection automatique lors de la saisie ou OCR
   const handlePlateChange = (val: string) => {
     const clean = val.toUpperCase().trim()
     setImmat(clean)
@@ -118,6 +169,7 @@ export default function ReceptionCCS() {
     setMotif("")
     setAngles(prev => prev.map(a => ({ ...a, preview: null })))
     setDossierCree(false)
+    setIsListening(false)
   }
 
   const totalPhotosPrises = angles.filter(a => a.preview !== null).length
@@ -172,7 +224,6 @@ export default function ReceptionCCS() {
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* CHAMP PLAQUE AVEC SCAN OCR ACTIF */}
               <div className="relative">
                 <input
                   type="file"
@@ -195,7 +246,7 @@ export default function ReceptionCCS() {
                   type="button"
                   onClick={() => plateCameraInputRef.current?.click()}
                   className="absolute right-2.5 top-2.5 text-slate-400 hover:text-blue-400 p-1 rounded-lg transition cursor-pointer"
-                  title="Prendre en photo la plaque pour lecture OCR"
+                  title="Scanner la plaque par photo"
                 >
                   {isScanningPlate ? (
                     <RefreshCw className="w-5 h-5 animate-spin text-blue-400" />
@@ -227,7 +278,7 @@ export default function ReceptionCCS() {
             />
           </section>
 
-          {/* 2. TOUR DE VÉHICULE & PHOTOS */}
+          {/* 2. TOUR DE VÉHICULE NUMÉRIQUE */}
           <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <div className="flex justify-between items-center">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -239,7 +290,7 @@ export default function ReceptionCCS() {
             </div>
 
             <p className="text-xs text-slate-400">
-              Touchez un angle pour photographier et tracer l'état de la carrosserie à l'accueil.
+              Touchez un angle pour photographier l'état de la carrosserie.
             </p>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-1">
@@ -296,21 +347,45 @@ export default function ReceptionCCS() {
             </div>
           </section>
 
-          {/* 3. DEMANDE CLIENT */}
+          {/* 3. DEMANDE CLIENT AVEC DICTÉE VOCALE */}
           <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <ShieldAlert className="w-4 h-4 text-amber-400" /> 3. Demande & Symptômes Client
-            </h2>
+            <div className="flex justify-between items-center">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <ShieldAlert className="w-4 h-4 text-amber-400" /> 3. Demande & Symptômes Client
+              </h2>
+
+              {/* Bouton Micro Dictée */}
+              <button
+                type="button"
+                onClick={toggleListening}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                  isListening
+                    ? "bg-rose-600 text-white animate-pulse shadow-[0_0_15px_rgba(225,29,72,0.5)]"
+                    : "bg-slate-800 text-cyan-400 hover:bg-slate-700 border border-white/5"
+                }`}
+              >
+                {isListening ? (
+                  <>
+                    <MicOff className="w-4 h-4" /> Dictée en cours...
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-4 h-4" /> Mode vocal
+                  </>
+                )}
+              </button>
+            </div>
+
             <textarea
               value={motif}
               onChange={(e) => setMotif(e.target.value)}
-              placeholder="Ex: Révision des 120 000 km + Bruit métallique lors des passages de rapports..."
+              placeholder="Saisissez ou dictez la demande (ex: Révision des 120 000 km + bruit métallique au passage de rapports)..."
               className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[90px]"
               required
             />
           </section>
 
-          {/* BOUTON D'ENVOI */}
+          {/* BOUTON TRANSMISSION ATELIER */}
           <button
             type="submit"
             disabled={loading || !immat || !kilometrage}
