@@ -10,14 +10,19 @@ import {
   AlertTriangle, 
   FileText, 
   Layers, 
-  Video, 
-  ShoppingCart,
-  Clock,
-  ArrowRight
+  Camera,
+  Mic,
+  MicOff,
+  ArrowRight,
+  Disc,
+  Battery,
+  CircleDot,
+  Image as ImageIcon,
+  Trash2
 } from "lucide-react"
 
 export default function AtelierTech() {
-  // Contexte véhicule transmis par le CCS
+  // Contexte véhicule
   const [plate, setPlate] = useState("AA-123-BB")
   const [vehicle, setVehicle] = useState("Peugeot 308 II - 1.5 BlueHDi 130 (DV5RC)")
   const [mileage, setMileage] = useState("120000")
@@ -32,6 +37,23 @@ export default function AtelierTech() {
   const [voltage, setVoltage] = useState("Attente de mesure...")
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // Mode Vocal Web Speech API
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<any>(null)
+
+  // Points de contrôle express (Checklist sécurité rapide)
+  const [quickChecks, setQuickChecks] = useState({
+    pneusAV: "bon",
+    pneusAR: "bon",
+    freinsAV: "bon",
+    freinsAR: "bon",
+    batterie: "bon",
+  })
+
+  // Photos techniques (Diagbox / Pièces démontées)
+  const [techPhotos, setTechPhotos] = useState<string[]>([])
+  const techPhotoInputRef = useRef<HTMLInputElement>(null)
+
   // Envoi au Chef d'Atelier
   const [panneConstatee, setPanneConstatee] = useState("Remplacement boîte de vitesses 6 rapports et kit embrayage bi-masse")
   const [loadingDevis, setLoadingDevis] = useState(false)
@@ -41,7 +63,51 @@ export default function AtelierTech() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Communication avec Jack Diag
+  // Initialisation reconnaissance vocale
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition()
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = "fr-FR"
+
+        recognition.onresult = (event: any) => {
+          let currentTranscript = ""
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            currentTranscript += event.results[i][0].transcript
+          }
+          if (currentTranscript.trim()) {
+            setInput(prev => {
+              const base = prev ? prev.trim() + " " : ""
+              return base + currentTranscript
+            })
+          }
+        }
+
+        recognition.onerror = () => setIsListening(false)
+        recognition.onend = () => setIsListening(false)
+        recognitionRef.current = recognition
+      }
+    }
+  }, [])
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("Dictée vocale non disponible sur ce navigateur.")
+      return
+    }
+    if (isListening) {
+      recognitionRef.current.stop()
+      setIsListening(false)
+    } else {
+      recognitionRef.current.start()
+      setIsListening(true)
+    }
+  }
+
+  // Diagnostic Jack
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim()) return
 
@@ -81,7 +147,20 @@ export default function AtelierTech() {
     }
   }
 
-  // Génération du devis IA et transmission au Chef
+  // Prise de photo Diagbox / Pièce
+  const handleTechPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const previewUrl = URL.createObjectURL(file)
+      setTechPhotos(prev => [...prev, previewUrl])
+    }
+  }
+
+  const removeTechPhoto = (idx: number) => {
+    setTechPhotos(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  // Envoi devis vers chef d'atelier
   const handleGenerateAndSendToChef = async () => {
     if (!panneConstatee.trim()) return
     setLoadingDevis(true)
@@ -95,7 +174,7 @@ export default function AtelierTech() {
           immat: plate,
           kilometrage: mileage,
           panne_constatee: panneConstatee,
-          options_travaux: "Nomenclature complète avec consommables et barèmes"
+          options_travaux: `Nomenclature complète. Contrôles : Freins AV ${quickChecks.freinsAV}, Batterie ${quickChecks.batterie}`
         })
       })
 
@@ -136,11 +215,90 @@ export default function AtelierTech() {
         </span>
       </header>
 
-      {/* ZONE 1 : DIAGNOSTIC INTERACTIF AVEC JACK */}
-      <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+      {/* 1. POINTS DE CONTRÔLE EXPRESS (USURE & SÉCURITÉ) */}
+      <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-lg">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-          <Layers className="w-4 h-4 text-blue-400" /> 1. Recherche de Panne & Mesures
+          <Disc className="w-4 h-4 text-emerald-400" /> 1. Contrôles Express Sécurité
         </h2>
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+          {[
+            { key: "pneusAV", label: "Pneus AV" },
+            { key: "pneusAR", label: "Pneus AR" },
+            { key: "freinsAV", label: "Plaquettes AV" },
+            { key: "freinsAR", label: "Plaquettes AR" },
+            { key: "batterie", label: "Batterie 12V" },
+          ].map((item) => {
+            const val = (quickChecks as any)[item.key]
+            return (
+              <div key={item.key} className="bg-[#0B0F17] p-2 rounded-xl border border-white/5 flex flex-col gap-1.5">
+                <span className="text-[11px] text-slate-300 font-medium">{item.label}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVal = val === "bon" ? "a_prevoir" : val === "a_prevoir" ? "urgent" : "bon"
+                    setQuickChecks(prev => ({ ...prev, [item.key]: nextVal }))
+                  }}
+                  className={`py-1 px-2 rounded text-[10px] font-mono font-bold uppercase transition cursor-pointer ${
+                    val === "bon"
+                      ? "bg-emerald-950/60 text-emerald-400 border border-emerald-800"
+                      : val === "a_prevoir"
+                      ? "bg-amber-950/60 text-amber-400 border border-amber-800"
+                      : "bg-rose-950/60 text-rose-400 border border-rose-800 animate-pulse"
+                  }`}
+                >
+                  {val === "bon" ? "✓ Conforme" : val === "a_prevoir" ? "⚠ À prévoir" : "✖ Urgent"}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* 2. RECHERCHE DE PANNE & PHOTOS DIAGBOX */}
+      <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+        <div className="flex justify-between items-center">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <Layers className="w-4 h-4 text-blue-400" /> 2. Diagnostic & Mesures Jack
+          </h2>
+
+          {/* Bouton photo Diagbox */}
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              ref={techPhotoInputRef}
+              onChange={handleTechPhotoCapture}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => techPhotoInputRef.current?.click()}
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-lg text-xs text-cyan-400 font-medium flex items-center gap-1.5 cursor-pointer"
+            >
+              <Camera className="w-3.5 h-3.5" /> Photo Diagbox ({techPhotos.length})
+            </button>
+          </div>
+        </div>
+
+        {/* Aperçu des photos techniques */}
+        {techPhotos.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto py-1">
+            {techPhotos.map((url, i) => (
+              <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-cyan-500/40 shrink-0">
+                <img src={url} alt="Preuve diag" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeTechPhoto(i)}
+                  className="absolute top-0.5 right-0.5 p-0.5 bg-black/70 rounded text-rose-400 hover:text-rose-300"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="flex gap-2">
           <input 
@@ -160,10 +318,10 @@ export default function AtelierTech() {
         </div>
 
         {/* Historique du Chat */}
-        <div className="min-h-[160px] max-h-[240px] overflow-y-auto bg-[#0B0F17]/80 rounded-xl p-3 border border-white/5 flex flex-col gap-3 text-xs">
+        <div className="min-h-[140px] max-h-[220px] overflow-y-auto bg-[#0B0F17]/80 rounded-xl p-3 border border-white/5 flex flex-col gap-2.5 text-xs">
           {messages.length === 0 ? (
             <div className="text-slate-500 text-center my-auto">
-              Lancez le diagnostic pour guider vos contrôles pas-à-pas.
+              Lancez le diagnostic ou posez une question technique à Jack.
             </div>
           ) : (
             messages.map((msg, idx) => (
@@ -184,7 +342,7 @@ export default function AtelierTech() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Multimètre & Boutons Rapides */}
+        {/* Multimètre & Boutons de mesure */}
         <div className="grid grid-cols-3 gap-2 items-center">
           <div className="bg-black border border-slate-800 rounded-xl p-2 text-center">
             <span className="text-[10px] text-slate-500 block">Multimètre</span>
@@ -206,16 +364,26 @@ export default function AtelierTech() {
           </button>
         </div>
 
-        {/* Input Chat Diag */}
+        {/* Input Chat Diag avec Mode Vocal */}
         <div className="flex gap-2">
           <input 
             type="text" 
             value={input} 
             onChange={(e) => setInput(e.target.value)} 
             onKeyDown={(e) => e.key === "Enter" && handleSend(input)} 
-            placeholder="Poser une question ou préciser une usure..." 
+            placeholder="Dictez ou tapez votre question à Jack..." 
             className="bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 text-xs flex-1 text-slate-200 focus:border-blue-500"
           />
+          <button
+            type="button"
+            onClick={toggleListening}
+            className={`p-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              isListening ? "bg-rose-600 text-white animate-pulse" : "bg-slate-800 text-cyan-400 hover:bg-slate-700 border border-white/10"
+            }`}
+            title="Activer la dictée vocale"
+          >
+            {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+          </button>
           <button 
             type="button"
             onClick={() => handleSend(input)} 
@@ -227,46 +395,41 @@ export default function AtelierTech() {
         </div>
       </section>
 
-      {/* ZONE 2 : CONSTAT ATELIER & TRANSMISSION AU CHEF */}
+      {/* 3. CONSTAT & TRANSMISSION AU CHEF */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-          <FileText className="w-4 h-4 text-emerald-400" /> 2. Constat Final & Chiffrage Automatique
+          <FileText className="w-4 h-4 text-emerald-400" /> 3. Constat Final & Transmission au Chef
         </h2>
 
         {devisTransmis ? (
-          <div className="p-5 bg-emerald-950/30 border border-emerald-500/30 rounded-xl text-center flex flex-col items-center gap-2">
-            <CheckCircle2 className="w-10 h-10 text-emerald-400" />
-            <h3 className="font-bold text-sm text-emerald-300">Constat transmis au Chef d'Atelier !</h3>
-            <p className="text-xs text-slate-300">
-              L'agent IA a généré la nomenclature complète et calculé le temps barémé. Le dossier est en attente de validation sur l'écran du Chef.
+          <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-xl text-center flex flex-col items-center gap-2">
+            <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+            <h3 className="font-bold text-xs md:text-sm text-emerald-300">Dossier et contrôles transmis au Chef d'Atelier !</h3>
+            <p className="text-[11px] text-slate-300">
+              Le chiffrage complet a été calculé par l'IA et attend validation sur la tour de contrôle.
             </p>
             <button
               onClick={() => setDevisTransmis(false)}
-              className="text-[11px] text-slate-400 hover:text-white underline mt-1 cursor-pointer"
+              className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
             >
               Modifier le constat
             </button>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <div>
-              <label className="text-[11px] text-slate-400 block mb-1">
-                Intervention constatée à chiffrer :
-              </label>
-              <textarea
-                value={panneConstatee}
-                onChange={(e) => setPanneConstatee(e.target.value)}
-                rows={2}
-                className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3 text-xs text-slate-200 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40 font-mono"
-                placeholder="Ex: Remplacement boîte de vitesses + butée hydraulique..."
-              />
-            </div>
+            <textarea
+              value={panneConstatee}
+              onChange={(e) => setPanneConstatee(e.target.value)}
+              rows={2}
+              className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3 text-xs text-slate-200 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40 font-mono"
+              placeholder="Ex: Remplacement boîte de vitesses + butée d'embrayage..."
+            />
 
             <button
               type="button"
               onClick={handleGenerateAndSendToChef}
               disabled={loadingDevis || !panneConstatee.trim()}
-              className={`py-3.5 px-4 rounded-xl font-bold text-xs md:text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
+              className={`py-3 px-4 rounded-xl font-bold text-xs md:text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
                 !loadingDevis && panneConstatee.trim()
                   ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] cursor-pointer"
                   : "bg-slate-800 text-slate-500 cursor-not-allowed"
@@ -279,7 +442,7 @@ export default function AtelierTech() {
                 </>
               ) : (
                 <>
-                  Générer le devis IA & Transmettre au Chef d'Atelier
+                  Générer le devis IA & Transmettre au Chef
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
