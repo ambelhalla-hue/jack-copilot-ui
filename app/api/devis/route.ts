@@ -1,43 +1,33 @@
 import { NextResponse } from "next/server"
 
-export const maxDuration = 60
-
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "Clé GEMINI_API_KEY non configurée dans Vercel." },
-        { status: 500 }
-      )
-    }
+    if (!apiKey) return NextResponse.json({ error: "Clé API manquante." }, { status: 500 })
 
     const body = await req.json()
     const { vehicle, immat, kilometrage, panne_constatee, options_travaux } = body
 
-    const SYSTEM_PROMPT = `Tu es un chef d'atelier automobile expert en chiffrage constructeur.
-Ton rôle est de générer un devis technique complet, conforme aux préconisations constructeur, sans rien oublier.
+    const SYSTEM_PROMPT = `Tu es un expert chiffrage et méthode après-vente automobile.
+Tu reçois le constat mécanique d'un véhicule et l'état des contrôles de sécurité.
+Tu DOIS obligatoirement générer la nomenclature complète sous forme d'un objet JSON STRICT (sans texte autour, sans markdown).
 
-Tu DOIS répondre UNIQUEMENT avec un objet JSON valide (aucun texte avant ou après) respectant exactement cette structure :
+Format JSON attendu :
 {
-  "intervention": "Nom précis de l'opération",
   "pieces_principales": [
-    { "designation": "Nom précis de la pièce", "ref_constructeur": "Réf ou standard", "quantite": 1, "type": "Origine ou Échange standard" }
+    { "id": "1", "designation": "Nom exact de la pièce", "ref": "Référence OE / Adaptable", "quantite": 1 }
   ],
-  "peripheriques_et_fluides": [
-    { "designation": "Nom précis (joints, vis neuves, fluides normés)", "ref_constructeur": "Spécification ou norme constructeur", "quantite": 1 }
+  "peripheriques": [
+    { "id": "1", "designation": "Consommable / Joint / Visserie / Fluide requis", "ref": "Norme constructeur", "quantite": 1 }
   ],
-  "main_d_oeuvre": [
-    { "operation": "Libellé de l'opération barémée", "heures": 0.0 }
-  ],
-  "temps_total_bareme": 0.0,
-  "restitution_estimee": "Délai ou heure estimée (ex: 18h00 ou +4h)",
-  "justification_client": "Courte explication vulgarisée pour rassurer le client sur la nécessité des pièces d'usure et périphériques."
+  "main_oeuvre": [
+    { "id": "1", "operation": "Intitulé barème constructeur", "heures": 1.5 }
+  ]
 }`
 
-    const userPrompt = `Véhicule : ${vehicle || "Non spécifié"} (Immatriculation : ${immat || "N/A"}, Kilométrage : ${kilometrage || "N/A"} km)
-Constats / Travaux à chiffrer : ${panne_constatee || "Remplacement embrayage et boîte de vitesses"}
-Précisions complémentaires : ${options_travaux || "Nomenclature complète requise"}`
+    const userPrompt = `Véhicule: ${vehicle} (${immat}), Kilométrage: ${kilometrage} km
+Panne et travaux constatés: ${panne_constatee}
+Points de contrôle sécurité: ${options_travaux}`
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -45,31 +35,19 @@ Précisions complémentaires : ${options_travaux || "Nomenclature complète requ
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: `${SYSTEM_PROMPT}\n\n${userPrompt}` }]
-            }
-          ],
-          generationConfig: {
-            response_mime_type: "application/json"
-          }
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          generationConfig: { response_mime_type: "application/json" }
         })
       }
     )
 
     const data = await response.json()
-    if (data.error) {
-      return NextResponse.json({ error: data.error.message }, { status: 500 })
-    }
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}"
+    const devisJson = JSON.parse(rawText)
 
-    const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}"
-    const devisStructure = JSON.parse(rawJson)
-
-    return NextResponse.json({ devis: devisStructure })
+    return NextResponse.json({ devis: devisJson })
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error?.message || "Erreur lors de la génération du devis structuré." },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error?.message || "Erreur lors de la génération du devis." }, { status: 500 })
   }
 }
