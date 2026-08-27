@@ -6,12 +6,11 @@ import {
   Camera, 
   CheckCircle2, 
   ArrowRight, 
-  FileText, 
   ShieldAlert, 
   Image as ImageIcon,
   Trash2,
   Gauge,
-  Sparkles
+  RefreshCw
 } from "lucide-react"
 
 interface PhotoAngle {
@@ -26,9 +25,12 @@ export default function ReceptionCCS() {
   const [kilometrage, setKilometrage] = useState("")
   const [motif, setMotif] = useState("")
   const [loading, setLoading] = useState(false)
+  const [isScanningPlate, setIsScanningPlate] = useState(false)
   const [dossierCree, setDossierCree] = useState(false)
 
-  // 4 angles clés du tour de caisse + 1 compteur
+  const plateCameraInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
+
   const [angles, setAngles] = useState<PhotoAngle[]>([
     { id: "avant", label: "1. Face avant", preview: null },
     { id: "gauche", label: "2. Côté gauche", preview: null },
@@ -37,11 +39,9 @@ export default function ReceptionCCS() {
     { id: "compteur", label: "5. Photo compteur", preview: null },
   ])
 
-  const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
-
-  // Détection automatique lors de la saisie de plaque
+  // Détection automatique lors de la saisie ou de la reconnaissance OCR
   const handlePlateChange = (val: string) => {
-    const clean = val.toUpperCase()
+    const clean = val.toUpperCase().trim()
     setImmat(clean)
     if (clean === "AA-123-BB") {
       setVehicle("Peugeot 308 II - 1.5 BlueHDi 130 (DV5RC)")
@@ -52,7 +52,37 @@ export default function ReceptionCCS() {
     }
   }
 
-  // Prise de photo réelle via l'appareil photo du téléphone/tablette
+  // Scan OCR de la plaque par photo
+  const handleScanPlateFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsScanningPlate(true)
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+      const base64String = reader.result as string
+      try {
+        const res = await fetch("/api/ocr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64String })
+        })
+        const data = await res.json()
+        if (data.immatriculation) {
+          handlePlateChange(data.immatriculation)
+        }
+        if (data.modele_detecte && !vehicle) {
+          setVehicle(data.modele_detecte)
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setIsScanningPlate(false)
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
   const handleFileChange = (angleId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -142,16 +172,37 @@ export default function ReceptionCCS() {
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* CHAMP PLAQUE AVEC SCAN OCR ACTIF */}
               <div className="relative">
                 <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  ref={plateCameraInputRef}
+                  onChange={handleScanPlateFile}
+                  className="hidden"
+                />
+                <input
                   type="text"
-                  value={immat}
+                  value={isScanningPlate ? "Scan en cours..." : immat}
                   onChange={(e) => handlePlateChange(e.target.value)}
                   placeholder="Plaque (ex: AA-123-BB)"
-                  className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 font-mono uppercase text-blue-400 font-bold text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500/40 pr-10"
+                  className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 font-mono uppercase text-blue-400 font-bold text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500/40 pr-11"
                   required
+                  disabled={isScanningPlate}
                 />
-                <Camera className="w-4 h-4 text-slate-500 absolute right-3.5 top-3.5 pointer-events-none" />
+                <button
+                  type="button"
+                  onClick={() => plateCameraInputRef.current?.click()}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-blue-400 p-1 rounded-lg transition cursor-pointer"
+                  title="Prendre en photo la plaque pour lecture OCR"
+                >
+                  {isScanningPlate ? (
+                    <RefreshCw className="w-5 h-5 animate-spin text-blue-400" />
+                  ) : (
+                    <Camera className="w-5 h-5" />
+                  )}
+                </button>
               </div>
 
               <div className="relative">
@@ -188,10 +239,9 @@ export default function ReceptionCCS() {
             </div>
 
             <p className="text-xs text-slate-400">
-              Touchez un bloc pour activer l'appareil photo et tracer l'état de la carrosserie dès l'accueil.
+              Touchez un angle pour photographier et tracer l'état de la carrosserie à l'accueil.
             </p>
 
-            {/* Grille des 5 cartes de capture */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-1">
               {angles.map((angle) => (
                 <div
@@ -246,7 +296,7 @@ export default function ReceptionCCS() {
             </div>
           </section>
 
-          {/* 3. DEMANDE CLIENT & SYMPTÔMES */}
+          {/* 3. DEMANDE CLIENT */}
           <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <ShieldAlert className="w-4 h-4 text-amber-400" /> 3. Demande & Symptômes Client
@@ -260,7 +310,7 @@ export default function ReceptionCCS() {
             />
           </section>
 
-          {/* BOUTON D'ENVOI ATELIER */}
+          {/* BOUTON D'ENVOI */}
           <button
             type="submit"
             disabled={loading || !immat || !kilometrage}
