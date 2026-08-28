@@ -173,10 +173,13 @@ export default function AtelierTech() {
   }
 
   const handleGenerateAndSendToChef = async () => {
-    // Si le champ est vide ou trop court, on prend le contexte par défaut
-    const constatFinal = panneConstatee.trim().length > 2 
-      ? panneConstatee.trim() 
-      : `Intervention suite au défaut ${dtc} (${symptoms})`
+    const anomalies = getSecurityAnomalies()
+    
+    // Panne mécanique brute simplifiée
+    let basePanne = panneConstatee.trim()
+    if (!basePanne || basePanne.length < 2) {
+      basePanne = `Intervention défaut ${dtc}`
+    }
 
     setLoadingDevis(true)
 
@@ -188,17 +191,19 @@ export default function AtelierTech() {
           vehicle,
           immat: plate,
           kilometrage: mileage,
-          panne_constatee: constatFinal,
-          options_travaux: `Contrôles : Plaquettes AV ${quickChecks.plaquettesAV}, Disques AV ${quickChecks.disquesAV}, Plaquettes AR ${quickChecks.plaquettesAR}, Disques/Tambours AR ${quickChecks.disquesAR}, Batterie ${quickChecks.batterie}`
+          panne_constatee: basePanne,
+          options_travaux: anomalies.length > 0 ? anomalies.join(", ") : "Contrôles conformes"
         })
       })
 
       const data = await res.json()
       if (!data.error && data.devis) {
+        const resumeCourt = data.constat_court || (anomalies.length > 0 ? `${basePanne} + ${anomalies.join(" + ")}` : basePanne)
+        
         if (dossierId) {
           await updateDossierStatusAndData(dossierId, {
             statut: "devis_genere",
-            constats_technicien: constatFinal,
+            constats_technicien: resumeCourt,
             devis_ia: data.devis
           })
         }
