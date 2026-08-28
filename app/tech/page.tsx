@@ -78,18 +78,20 @@ export default function AtelierTech() {
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition()
         recognition.continuous = true
-        recognition.interimResults = true
+        recognition.interimResults = false // Empêche la répétition des syllabes
         recognition.lang = "fr-FR"
 
         recognition.onresult = (event: any) => {
-          let currentTranscript = ""
+          let finalTranscript = ""
           for (let i = event.resultIndex; i < event.results.length; i++) {
-            currentTranscript += event.results[i][0].transcript
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript
+            }
           }
-          if (currentTranscript.trim()) {
+          if (finalTranscript.trim()) {
             setInput(prev => {
-              const base = prev ? prev.trim() + " " : ""
-              return base + currentTranscript
+              const cleanPrev = prev.trim()
+              return cleanPrev ? `${cleanPrev} ${finalTranscript.trim()}` : finalTranscript.trim()
             })
           }
         }
