@@ -5,36 +5,74 @@ export const maxDuration = 60
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY
+    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+
     if (!apiKey) return NextResponse.json({ error: "Clé API manquante." }, { status: 500 })
 
     const body = await req.json()
     const { vehicle, immat, kilometrage, panne_constatee, options_travaux } = body
 
+    // 1. Récupération des taux horaires réels du garage depuis Supabase
+    let tauxT1 = 75.00
+    let tauxT2 = 95.00
+    let tauxT3 = 120.00
+
+    try {
+      if (supabaseUrl && supabaseAnonKey) {
+        const resParam = await fetch(`${supabaseUrl}/rest/v1/parametres_atelier?select=*&limit=1`, {
+          headers: { "apikey": supabaseAnonKey, "Authorization": `Bearer ${supabaseAnonKey}` }
+        })
+        const params = await resParam.json()
+        if (params && params.length > 0) {
+          tauxT1 = Number(params[0].taux_t1) || 75.00
+          tauxT2 = Number(params[0].taux_t2) || 95.00
+          tauxT3 = Number(params[0].taux_t3) || 120.00
+        }
+      }
+    } catch (e) {
+      console.error("Erreur lecture parametres Supabase, utilisation des valeurs par défaut.", e)
+    }
+
+    // 2. Recherche de correspondance dans la table des 100 barèmes standards
+    let baremeTrouve: any = null
+    try {
+      if (supabaseUrl && supabaseAnonKey && panne_constatee) {
+        const resBaremes = await fetch(`${supabaseUrl}/rest/v1/baremes_standards?select=*`, {
+          headers: { "apikey": supabaseAnonKey, "Authorization": `Bearer ${supabaseAnonKey}` }
+        })
+        const listBaremes = await resBaremes.json()
+        if (Array.isArray(listBaremes)) {
+          const motsCles = panne_constatee.toLowerCase().split(" ")
+          baremeTrouve = listBaremes.find((b: any) => 
+            motsCles.some((mot: string) => mot.length > 3 && b.operation.toLowerCase().includes(mot))
+          )
+        }
+      }
+    } catch (e) {
+      console.error("Erreur lecture baremes Supabase", e)
+    }
+
     const userPrompt = `Tu es un chiffreur expert après-vente automobile.
-Génère une simulation de devis ultra-détaillée et exhaustive sous forme d'un objet JSON STRICT (sans markdown, sans aucun texte autour) pour l'intervention suivante :
-
+Génère la nomenclature chiffrée en JSON STRICT (sans markdown, sans aucun texte autour) pour :
 Véhicule : ${vehicle || "Peugeot 308 II"} (${immat || "AA-123-BB"}) - Compteur : ${kilometrage || "120000"} km
-Constats / Panne déclarée : ${panne_constatee || "Remplacement batterie 12V et révision"}
-Contrôles atelier (usures signalées) : ${options_travaux || "Batterie faible, freinage à contrôler"}
+Constats mécanicien : ${panne_constatee || "Remplacement batterie 12V"}
+Contrôles atelier : ${options_travaux || "Non spécifié"}
 
-RÈGLES STRICTES DE CHIFFRAGE :
-1. "pieces_principales" : Découpe chaque pièce requise avec un prix unitaire HT réaliste (prix_unitaire_ht) et une référence OE réaliste. Inclus les organes de la panne ET chaque point noté "urgent" ou "a_prevoir".
-2. "peripheriques" : Inclus les éléments secondaires obligatoires (pochette de joints, visserie neuve, dégraissant, nettoyant freins, fluides/huiles normées, recyclage).
-3. "main_oeuvre" : Découpe les opérations en centièmes d'heures (heures) avec un taux horaire HT (taux_horaire_ht : 85.00).
+DONNÉES ATELIER RÉELLES (SUPABASE) :
+- Taux horaires applicables : T1=${tauxT1}€, T2=${tauxT2}€, T3=${tauxT3}€
+${baremeTrouve ? `- Barème standard officiel identifié : "${baremeTrouve.operation}" -> Temps barémé = ${baremeTrouve.temps_heures} h (Taux ${baremeTrouve.type_taux}), Fournitures obligatoires = ${baremeTrouve.fournitures_incluses}` : "- Détermine les temps et pièces adaptés aux règles constructeur."}
 
 FORMAT JSON STRICT ATTENDU :
 {
   "pieces_principales": [
-    { "id": "1", "designation": "Batterie 12V 70Ah 720A EFB / AGM", "ref": "16 824 512 80", "quantite": 1, "prix_unitaire_ht": 135.00 },
-    { "id": "2", "designation": "Jeu de plaquettes de frein avant", "ref": "16 172 834 80", "quantite": 1, "prix_unitaire_ht": 68.00 }
+    { "id": "1", "designation": "${baremeTrouve ? baremeTrouve.operation : (panne_constatee || 'Organe principal')}", "ref": "OEM-REF", "quantite": 1, "prix_unitaire_ht": 135.00 }
   ],
   "peripheriques": [
-    { "id": "1", "designation": "Nettoyant freins & dégraissant haute pression", "ref": "CONS-01", "quantite": 1, "prix_unitaire_ht": 7.50 },
-    { "id": "2", "designation": "Traitement & recyclage batterie usagée", "ref": "ECO-BAT", "quantite": 1, "prix_unitaire_ht": 4.50 }
+    { "id": "1", "designation": "${baremeTrouve?.fournitures_incluses || 'Fournitures et consommables d atelier'}", "ref": "CONS-01", "quantite": 1, "prix_unitaire_ht": 7.50 }
   ],
   "main_oeuvre": [
-    { "id": "1", "operation": "Remplacement batterie 12V et réinitialisation BMS", "heures": 0.40, "taux_horaire_ht": 85.00 },
-    { "id": "2", "operation": "Remplacement plaquettes de frein avant", "heures": 0.80, "taux_horaire_ht": 85.00 }
+    { "id": "1", "operation": "${baremeTrouve ? baremeTrouve.operation : 'Main-d oeuvre remplacement'}", "heures": ${baremeTrouve ? baremeTrouve.temps_heures : 0.60}, "taux_horaire_ht": ${baremeTrouve?.type_taux === 'T2' ? tauxT2 : baremeTrouve?.type_taux === 'T3' ? tauxT3 : tauxT1} }
   ]
 }`
 
@@ -55,34 +93,28 @@ FORMAT JSON STRICT ATTENDU :
 
       const data = await response.json()
       const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text
-      if (rawText) {
-        devis = JSON.parse(rawText)
-      }
+      if (rawText) devis = JSON.parse(rawText)
     } catch (e) {
       console.error("Erreur parsing IA devis", e)
     }
 
-    // Sécurité de secours : simulation par défaut immédiate si l'IA tarde ou échoue
     if (!devis || !Array.isArray(devis.pieces_principales) || devis.pieces_principales.length === 0) {
       devis = {
         pieces_principales: [
-          { id: "1", designation: panne_constatee && panne_constatee.length > 3 ? panne_constatee : "Batterie 12V Stop&Start", ref: "16 824 512 80", quantite: 1, prix_unitaire_ht: 135.00 },
-          { id: "2", designation: "Jeu de plaquettes de frein avant", ref: "16 172 834 80", quantite: 1, prix_unitaire_ht: 65.00 }
+          { id: "1", designation: baremeTrouve ? baremeTrouve.operation : (panne_constatee || "Batterie 12V"), ref: "OEM-STD", quantite: 1, prix_unitaire_ht: 135.00 }
         ],
         peripheriques: [
-          { id: "1", designation: "Fournitures d'atelier & nettoyant freins", ref: "CONS-01", quantite: 1, prix_unitaire_ht: 8.50 },
-          { id: "2", designation: "Traitement des déchets et recyclage", ref: "DECH-02", quantite: 1, prix_unitaire_ht: 4.50 }
+          { id: "1", designation: baremeTrouve?.fournitures_incluses || "Consommables & recyclage", ref: "CONS-01", quantite: 1, prix_unitaire_ht: 7.50 }
         ],
         main_oeuvre: [
-          { id: "1", operation: "Dépose / Repose composant principal et paramétrage", "heures": 0.60, "taux_horaire_ht": 85.00 },
-          { id: "2", operation: "Contrôle circuit de charge et mémoire calculateur", "heures": 0.30, "taux_horaire_ht": 85.00 }
+          { id: "1", operation: baremeTrouve ? baremeTrouve.operation : "Main-d'œuvre intervention", heures: baremeTrouve ? Number(baremeTrouve.temps_heures) : 0.60, taux_horaire_ht: baremeTrouve?.type_taux === 'T2' ? tauxT2 : tauxT1 }
         ]
       }
     }
 
     const totalPiecesHT = (devis.pieces_principales || []).reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
     const totalFournituresHT = (devis.peripheriques || []).reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
-    const totalMoHT = (devis.main_oeuvre || []).reduce((acc: number, m: any) => acc + (Number(m.heures || 0) * Number(m.taux_horaire_ht || 85)), 0)
+    const totalMoHT = (devis.main_oeuvre || []).reduce((acc: number, m: any) => acc + (Number(m.heures || 0) * Number(m.taux_horaire_ht || tauxT1)), 0)
 
     const totalHT = totalPiecesHT + totalFournituresHT + totalMoHT
     const tva = totalHT * 0.20
