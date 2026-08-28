@@ -173,51 +173,54 @@ export default function AtelierTech() {
   }
 
   const handleGenerateAndSendToChef = async () => {
+    setLoadingDevis(true)
     const anomalies = getSecurityAnomalies()
     
-    // Panne mécanique brute simplifiée
     let basePanne = panneConstatee.trim()
     if (!basePanne || basePanne.length < 2) {
-      basePanne = `Intervention défaut ${dtc}`
+      basePanne = `Intervention défaut ${dtc} (${symptoms})`
     }
-
-    setLoadingDevis(true)
 
     try {
       const res = await fetch("/api/devis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vehicle,
-          immat: plate,
-          kilometrage: mileage,
+          vehicle: vehicle || "Véhicule Atelier",
+          immat: plate || "AA-123-BB",
+          kilometrage: mileage || "100000",
           panne_constatee: basePanne,
           options_travaux: anomalies.length > 0 ? anomalies.join(", ") : "Contrôles conformes"
         })
       })
 
       const data = await res.json()
-      if (!data.error && data.devis) {
+
+      if (data && data.devis) {
         const resumeCourt = data.constat_court || (anomalies.length > 0 ? `${basePanne} + ${anomalies.join(" + ")}` : basePanne)
         
+        // Sauvegarde Supabase si un ID existe, sinon passage direct
         if (dossierId) {
-          await updateDossierStatusAndData(dossierId, {
-            statut: "devis_genere",
-            constats_technicien: resumeCourt,
-            devis_ia: data.devis
-          })
+          try {
+            await updateDossierStatusAndData(dossierId, {
+              statut: "devis_genere",
+              constats_technicien: resumeCourt,
+              devis_ia: data.devis
+            })
+          } catch (dbErr) {
+            console.warn("Erreur mise à jour Supabase :", dbErr)
+          }
         }
         setDevisTransmis(true)
       } else {
-        alert("Erreur lors de la génération du devis.")
+        alert("Erreur lors du chiffrage : " + (data?.error || "Réponse invalide"))
       }
-    } catch {
-      alert("Erreur réseau lors de la transmission.")
+    } catch (err: any) {
+      alert("Erreur réseau : " + (err?.message || "Connexion impossible"))
     } finally {
       setLoadingDevis(false)
     }
   }
-
   const checkItems = [
     { key: "pneusAV", label: "Pneus AV" },
     { key: "pneusAR", label: "Pneus AR" },
