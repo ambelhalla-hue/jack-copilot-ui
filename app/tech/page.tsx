@@ -9,96 +9,69 @@ import {
   AlertTriangle, 
   FileText, 
   Layers, 
-  Camera, 
-  Mic, 
-  MicOff, 
-  ArrowRight, 
-  Disc, 
-  Trash2,
-  Car,
-  Clock,
-  ArrowLeft
+  Camera,
+  Mic,
+  MicOff,
+  ArrowRight,
+  Disc,
+  Trash2
 } from "lucide-react"
 import { getAllDossiers, updateDossierStatusAndData } from "@/lib/supabase"
 
-interface Dossier {
-  id: string
-  immatriculation: string
-  vin: string
-  kilometrage: number
-  statut: string
-  constats_technicien: string
-  photos_tour_vehicule: string[]
-  created_at: string
-}
-
 export default function AtelierTech() {
-  // Liste des véhicules disponibles
-  const [dossiers, setDossiers] = useState<Dossier[]>([])
-  const [loadingList, setLoadingList] = useState(true)
-  const [selectedDossier, setSelectedDossier] = useState<Dossier | null>(null)
+  const [dossierId, setDossierId] = useState<string | null>(null)
+  const [plate, setPlate] = useState("AA-123-BB")
+  const [vehicle, setVehicle] = useState("Peugeot 308 II - 1.5 BlueHDi 130")
+  const [mileage, setMileage] = useState("120000")
+  const [receptionMotif, setReceptionMotif] = useState("Inspection demandée")
 
-  // Données du véhicule sélectionné
-  const [plate, setPlate] = useState("")
-  const [vehicle, setVehicle] = useState("")
-  const [mileage, setMileage] = useState("")
-  const [receptionMotif, setReceptionMotif] = useState("")
+  // Chargement du dossier actif depuis Supabase
+  useEffect(() => {
+    const loadDossier = async () => {
+      try {
+        const list = await getAllDossiers()
+        if (list && list.length > 0) {
+          const active = list.find((d: any) => d.statut !== "valide_chef" && d.statut !== "valide_client") || list[0]
+          setDossierId(active.id)
+          if (active.immatriculation) setPlate(active.immatriculation)
+          if (active.vin) setVehicle(active.vin)
+          if (active.kilometrage) setMileage(active.kilometrage)
+          if (active.motifCCS) setReceptionMotif(active.motifCCS)
+        }
+      } catch (error) {
+        console.error("Erreur de liaison Supabase", error)
+      }
+    }
+    loadDossier()
+  }, [])
 
-  // Diagnostic Jack
   const [dtc, setDtc] = useState("P0234")
-  const [symptoms, setSymptoms] = useState("")
+  const [symptoms, setSymptoms] = useState("Perte de puissance sous charge")
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState("")
   const [loadingDiag, setLoadingDiag] = useState(false)
   const [voltage, setVoltage] = useState("Attente de mesure...")
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Mode Vocal Web Speech API
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<any>(null)
 
-  // Points de contrôle express
   const [quickChecks, setQuickChecks] = useState({
-    pneusAV: "bon",
-    pneusAR: "bon",
-    plaquettesAV: "bon",
-    disquesAV: "bon",
-    plaquettesAR: "bon",
-    disquesAR: "bon",
-    batterie: "bon",
+    pneusAV: "bon", pneusAR: "bon", plaquettesAV: "bon", plaquettesAR: "bon",
+    disquesAV: "bon", disquesAR: "bon", batterie: "bon"
   })
 
-  // Photos techniques
   const [techPhotos, setTechPhotos] = useState<string[]>([])
   const techPhotoInputRef = useRef<HTMLInputElement>(null)
 
-  // Transmission devis
-  const [panneConstatee, setPanneConstatee] = useState("")
+  const [panneConstatee, setPanneConstatee] = useState("Remplacement boîte de vitesses 6 rapports et kit embrayage bi-masse")
   const [loadingDevis, setLoadingDevis] = useState(false)
   const [devisTransmis, setDevisTransmis] = useState(false)
-
-  // Charger la liste des véhicules depuis Supabase
-  const loadDossiersList = async () => {
-    setLoadingList(true)
-    try {
-      const list = await getAllDossiers()
-      setDossiers(list || [])
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoadingList(false)
-    }
-  }
-
-  useEffect(() => {
-    loadDossiersList()
-  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Initialisation micro
   useEffect(() => {
     if (typeof window !== "undefined") {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -114,7 +87,10 @@ export default function AtelierTech() {
             currentTranscript += event.results[i][0].transcript
           }
           if (currentTranscript.trim()) {
-            setInput(prev => (prev ? prev.trim() + " " : "") + currentTranscript)
+            setInput(prev => {
+              const base = prev ? prev.trim() + " " : ""
+              return base + currentTranscript
+            })
           }
         }
         recognition.onerror = () => setIsListening(false)
@@ -125,7 +101,10 @@ export default function AtelierTech() {
   }, [])
 
   const toggleListening = () => {
-    if (!recognitionRef.current) return
+    if (!recognitionRef.current) {
+      alert("Dictée vocale non disponible.")
+      return
+    }
     if (isListening) {
       recognitionRef.current.stop()
       setIsListening(false)
@@ -135,27 +114,8 @@ export default function AtelierTech() {
     }
   }
 
-  // Choisir un véhicule dans la liste
-  const handleSelectVehicle = (d: Dossier) => {
-    setSelectedDossier(d)
-    setPlate(d.immatriculation)
-    setVehicle(d.vin || "Véhicule non précisé")
-    setMileage(d.kilometrage ? d.kilometrage.toString() : "")
-    setReceptionMotif(d.constats_technicien || "Entretien courant")
-    setSymptoms(d.constats_technicien || "")
-    setPanneConstatee(d.constats_technicien || "")
-    setMessages([])
-  }
-
-  const handleBackToList = () => {
-    setSelectedDossier(null)
-    loadDossiersList()
-  }
-
-  // Diagnostic Jack
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim()) return
-
     const newMessages = [...messages, { role: "user", content: textToSend }]
     setMessages(newMessages)
     setInput("")
@@ -205,7 +165,7 @@ export default function AtelierTech() {
   }
 
   const handleGenerateAndSendToChef = async () => {
-    if (!panneConstatee.trim() || !selectedDossier) return
+    if (!panneConstatee.trim()) return
     setLoadingDevis(true)
 
     try {
@@ -221,17 +181,19 @@ export default function AtelierTech() {
         })
       })
 
-      const generatedData = await res.json()
-
-      await updateDossierStatusAndData(selectedDossier.id, {
-        statut: "devis_genere",
-        constats_technicien: panneConstatee,
-        devis_ia: generatedData.devis || generatedData
-      })
-
-      setDevisTransmis(true)
+      const data = await res.json()
+      if (!data.error) {
+        if (dossierId) {
+          await updateDossierStatusAndData(dossierId, {
+            statut: "devis_genere",
+            constats_technicien: panneConstatee,
+            devis_ia: data.devis
+          })
+        }
+        setDevisTransmis(true)
+      }
     } catch {
-      alert("Erreur lors de la transmission au Chef d'Atelier.")
+      alert("Erreur lors de la génération du devis.")
     } finally {
       setLoadingDevis(false)
     }
@@ -247,88 +209,14 @@ export default function AtelierTech() {
     { key: "batterie", label: "Batterie 12V" },
   ]
 
-  // ÉCRAN 1 : CHOIX DU VÉHICULE EN ATTENTE
-  if (!selectedDossier) {
-    return (
-      <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-4 md:p-6 gap-5">
-        <header className="flex justify-between items-center p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-cyan-600/20 border border-cyan-500/30 rounded-xl text-cyan-400">
-              <Wrench className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="font-bold text-slate-100 text-base md:text-lg">File d'Attente Atelier</h1>
-              <p className="text-xs text-slate-400">Sélectionnez le véhicule à prendre en charge</p>
-            </div>
-          </div>
-          <button
-            onClick={loadDossiersList}
-            disabled={loadingList}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-xl text-xs text-slate-300 flex items-center gap-1.5 cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingList ? "animate-spin text-cyan-400" : ""}`} /> Actualiser
-          </button>
-        </header>
-
-        {loadingList ? (
-          <div className="text-center py-12 text-slate-500 text-xs flex items-center justify-center gap-2">
-            <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" /> Chargement des véhicules de l'atelier...
-          </div>
-        ) : dossiers.length === 0 ? (
-          <div className="text-center py-12 bg-[#111827]/40 border border-white/5 rounded-2xl text-slate-400 text-xs">
-            Aucun véhicule en attente. Créez une entrée sur l'écran Réception (/ccs).
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {dossiers.map((d) => (
-              <div
-                key={d.id}
-                onClick={() => handleSelectVehicle(d)}
-                className="bg-[#111827]/80 border border-white/10 hover:border-cyan-500/50 p-4 rounded-2xl flex justify-between items-center gap-4 cursor-pointer transition-all duration-200 shadow-lg group hover:bg-slate-900"
-              >
-                <div className="flex flex-col gap-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold px-2.5 py-1 bg-blue-950 border border-blue-700/50 text-blue-400 rounded-lg">
-                      {d.immatriculation}
-                    </span>
-                    <h3 className="font-bold text-slate-200 text-sm truncate group-hover:text-cyan-300">
-                      {d.vin || "Véhicule client"}
-                    </h3>
-                  </div>
-                  <p className="text-xs text-slate-400 line-clamp-1">
-                    Motif : <span className="text-slate-300">{d.constats_technicien || "Non précisé"}</span>
-                  </p>
-                  <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono">
-                    <span>{d.kilometrage ? `${d.kilometrage.toLocaleString("fr-FR")} km` : "Km non renseigné"}</span>
-                    <span>• {d.photos_tour_vehicule?.length || 0} photo(s) CCS</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs shrink-0 group-hover:translate-x-1 transition-transform">
-                  Prendre en charge <ArrowRight className="w-4 h-4" />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
-    )
-  }
-
-  // ÉCRAN 2 : PAGE DE CONTRÔLE ET DIAGNOSTIC SUR LE VÉHICULE CHOISI
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-3 md:p-5 gap-4 selection:bg-blue-500/30">
       
-      {/* HEADER : VÉHICULE SÉLECTIONNÉ */}
       <header className="p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleBackToList}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-white/10 transition cursor-pointer"
-            title="Changer de véhicule"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
+          <div className="p-2.5 bg-cyan-600/20 border border-cyan-500/30 rounded-xl text-cyan-400">
+            <Wrench className="w-5 h-5" />
+          </div>
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
@@ -337,16 +225,15 @@ export default function AtelierTech() {
               <h1 className="font-bold text-slate-100 text-sm md:text-base">{vehicle}</h1>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Compteur : <strong className="text-emerald-400">{mileage} km</strong> • Motif : <span className="text-slate-300">{receptionMotif}</span>
+              Compteur : <strong className="text-emerald-400">{mileage} km</strong> • Motif CCS : <span className="text-slate-300">{receptionMotif}</span>
             </p>
           </div>
         </div>
-        <span className="text-[10px] font-mono uppercase px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded-full font-semibold">
+        <span className="text-[10px] font-mono uppercase px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded-full font-semibold self-end md:self-auto">
           Poste Technicien
         </span>
       </header>
 
-      {/* 1. POINTS DE CONTRÔLE EXPRESS */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -383,7 +270,6 @@ export default function AtelierTech() {
         </div>
       </section>
 
-      {/* 2. RECHERCHE DE PANNE & PHOTOS DIAGBOX */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -518,7 +404,6 @@ export default function AtelierTech() {
         </div>
       </section>
 
-      {/* 3. CONSTAT & TRANSMISSION AU CHEF */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
           <FileText className="w-4 h-4 text-emerald-400" /> 3. Constat Final & Transmission au Chef
@@ -529,7 +414,7 @@ export default function AtelierTech() {
             <CheckCircle2 className="w-8 h-8 text-emerald-400" />
             <h3 className="font-bold text-xs md:text-sm text-emerald-300">Dossier et contrôles transmis au Chef d'Atelier !</h3>
             <p className="text-[11px] text-slate-300">
-              Le chiffrage complet a été calculé et attend validation sur la tour de contrôle.
+              Le chiffrage complet a été calculé par l'IA et attend validation sur la tour de contrôle.
             </p>
             <button
               onClick={() => setDevisTransmis(false)}
@@ -561,7 +446,7 @@ export default function AtelierTech() {
               {loadingDevis ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Génération de la nomenclature par l'IA...
+                  Génération et envoi base de données...
                 </>
               ) : (
                 <>
