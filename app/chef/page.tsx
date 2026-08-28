@@ -207,41 +207,47 @@ export default function DashboardChefAtelier() {
     setLabor(prev => [...prev, { id: Date.now().toString(), operation: "Opération barémée", heures: 0.50, taux_horaire_ht: 85.00 }])
   }
 
-  const handleTransmitToClient = async (): Promise<void> => {
-    if (!allValidated || !selectedDossier) return
-    
-    setIsTransmitting(true)
-    setTransmitError(null)
+ const handleTransmitToClient = async (): Promise<void> => {
+  if (!allValidated || !selectedDossier) return
 
-    try {
-      const updatePayload: UpdateDossierInput = {
-        statut: "valide_chef",
-        devis_ia: {
-          pieces_principales: mainParts,
-          peripheriques: peripherals,
-          main_oeuvre: labor,
-          totaux
+  setIsTransmitting(true)
+  // Assure-toi d'avoir déclaré 'transmitError' en haut de ton composant (ex: const [transmitError, setTransmitError] = useState<string | null>(null))
+  if (typeof setTransmitError === 'function') setTransmitError(null)
+
+  try {
+    const updatePayload = {
+      statut: "valide_chef",
+      devis_ia: {
+        pieces_principales: mainParts,
+        peripheriques: peripherals,
+        main_oeuvre: labor,
+        totaux: {
+          totalPiecesHT,
+          totalFournituresHT: totalPeripheralsHT, // Alias requis pour la synchro
+          totalMoHT,
+          totalHT,
+          tva: totalHT * 0.20,
+          totalTTC,
+          totalTTC_circulaire: totalTTC * 0.78
         }
       }
+    }
 
-      await updateDossierStatusAndData(selectedDossier.id, updatePayload)
-      setIsTransmitted(true)
-      refreshDossiers()
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : "Erreur inconnue"
+    await updateDossierStatusAndData(selectedDossier.id, updatePayload)
+    setIsTransmitted(true)
+    refreshDossiers()
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : "Erreur inconnue"
+    if (typeof setTransmitError === 'function') {
       setTransmitError(errorMsg)
-      console.error("Erreur transmission devis:", err)
-    } finally {
-      setIsTransmitting(false)
+    } else {
+      alert("Erreur validation : " + errorMsg)
     }
+    console.error("Erreur transmission devis:", err)
+  } finally {
+    setIsTransmitting(false)
   }
-    } catch (err: any) {
-      alert("Erreur validation : " + err.message)
-    } finally {
-      setIsTransmitting(false)
-    }
-  }
-
+}
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-4xl mx-auto p-3 md:p-6 gap-5 selection:bg-blue-500/30">
       
