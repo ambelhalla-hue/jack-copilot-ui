@@ -13,12 +13,16 @@ import {
   Mic,
   MicOff
 } from "lucide-react"
-import { insertDossierAtelier } from "@/lib/supabase"
+import { insertDossierAtelier, type DossierAtelier } from "@/lib/supabase"
 
 interface PhotoAngle {
   id: string
   label: string
   preview: string | null
+}
+
+interface AnglePhotoChangeEvent extends React.ChangeEvent<HTMLInputElement> {
+  target: HTMLInputElement
 }
 
 export default function ReceptionCCS() {
@@ -29,9 +33,10 @@ export default function ReceptionCCS() {
   const [loading, setLoading] = useState(false)
   const [isScanningPlate, setIsScanningPlate] = useState(false)
   const [dossierCree, setDossierCree] = useState(false)
+  const [creationError, setCreationError] = useState<string | null>(null)
 
   const [isListening, setIsListening] = useState(false)
-  const recognitionRef = useRef<any>(null)
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
 
   const plateCameraInputRef = useRef<HTMLInputElement>(null)
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
@@ -46,14 +51,15 @@ export default function ReceptionCCS() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition()
+      const SpeechRecognitionAPI = (window as unknown as { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition ||
+                                  (window as unknown as { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition
+      if (SpeechRecognitionAPI) {
+        const recognition = new SpeechRecognitionAPI()
         recognition.continuous = true
         recognition.interimResults = true
         recognition.lang = "fr-FR"
 
-        recognition.onresult = (event: any) => {
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
           let currentTranscript = ""
           for (let i = event.resultIndex; i < event.results.length; i++) {
             currentTranscript += event.results[i][0].transcript
@@ -72,7 +78,7 @@ export default function ReceptionCCS() {
     }
   }, [])
 
-  const toggleListening = () => {
+  const toggleListening = (): void => {
     if (!recognitionRef.current) return
     if (isListening) {
       recognitionRef.current.stop()
@@ -83,7 +89,7 @@ export default function ReceptionCCS() {
     }
   }
 
-  const handlePlateChange = (val: string) => {
+  const handlePlateChange = (val: string): void => {
     const clean = val.toUpperCase().trim()
     setImmat(clean)
     if (clean === "AA-123-BB") {
@@ -95,11 +101,12 @@ export default function ReceptionCCS() {
     }
   }
 
-  const handleScanPlateFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleScanPlateFile = async (e: AnglePhotoChangeEvent): Promise<void> => {
     const file = e.target.files?.[0]
     if (!file) return
 
     setIsScanningPlate(true)
+    setCreationError(null)
     const reader = new FileReader()
     reader.onloadend = async () => {
       const base64String = reader.result as string
@@ -109,11 +116,12 @@ export default function ReceptionCCS() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image: base64String })
         })
-        const data = await res.json()
-        if (data.immatriculation) handlePlateChange(data.immatriculation)
-        if (data.modele_detecte && !vehicle) setVehicle(data.modele_detecte)
+        const data = await res.json() as Record<string, unknown>
+        if (typeof data.immatriculation === 'string') handlePlateChange(data.immatriculation)
+        if (typeof data.modele_detecte === 'string' && !vehicle) setVehicle(data.modele_detecte)
       } catch (err) {
-        console.error(err)
+        console.error("Erreur OCR:", err)
+        setCreationError("Erreur lors de la lecture de la plaque")
       } finally {
         setIsScanningPlate(false)
       }
@@ -121,7 +129,7 @@ export default function ReceptionCCS() {
     reader.readAsDataURL(file)
   }
 
-  const handleFileChange = (angleId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (angleId: string, e: AnglePhotoChangeEvent): void => {
     const file = e.target.files?.[0]
     if (file) {
       const previewUrl = URL.createObjectURL(file)
@@ -129,25 +137,26 @@ export default function ReceptionCCS() {
     }
   }
 
-  const triggerCamera = (angleId: string) => {
+  const triggerCamera = (angleId: string): void => {
     fileInputRefs.current[angleId]?.click()
   }
 
-  const removePhoto = (angleId: string, e: React.MouseEvent) => {
+  const removePhoto = (angleId: string, e: React.MouseEvent): void => {
     e.stopPropagation()
     setAngles(prev => prev.map(a => a.id === angleId ? { ...a, preview: null } : a))
   }
 
-  const handleCreateDossier = async (e: React.FormEvent) => {
+  const handleCreateDossier = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
     if (!immat || !kilometrage) return
 
     setLoading(true)
+    setCreationError(null)
 
     try {
       const photosArray = angles.map(a => a.label)
 
-      await insertDossierAtelier({
+      const createdDossier = await insertDossierAtelier({
         immatriculation: immat,
         vin: vehicle,
         kilometrage: parseInt(kilometrage, 10),
@@ -157,8 +166,10 @@ export default function ReceptionCCS() {
       })
 
       setDossierCree(true)
-    } catch (err: any) {
-      alert("Erreur lors de l'enregistrement dans Supabase : " + (err.message || err))
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : "Erreur inconnue"
+      setCreationError(errorMsg)
+      console.error("Erreur création dossier:", err)
     } finally {
       setLoading(false)
     }

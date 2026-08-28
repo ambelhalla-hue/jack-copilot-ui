@@ -17,32 +17,43 @@ import {
   RefreshCw, 
   ShoppingBag,
   BellRing,
+  AlertTriangle,
   X
 } from "lucide-react"
-import { getAllDossiers, updateDossierStatusAndData } from "@/lib/supabase"
+import { getAllDossiers, updateDossierStatusAndData, type DossierAtelier, type UpdateDossierInput } from "@/lib/supabase"
 
 interface PartItem {
   id: string
   designation: string
   ref: string
   quantite: number
-  prix_unitaire_ht?: number
+  prix_unitaire_ht: number
 }
 
 interface LaborItem {
   id: string
   operation: string
   heures: number
-  taux_horaire_ht?: number
+  taux_horaire_ht: number
+}
+
+interface QuoteTotals {
+  totalPiecesHT: number
+  totalFournituresHT: number
+  totalMoHT: number
+  totalHT: number
+  tva: number
+  totalTTC: number
+  totalTTC_circulaire: number
 }
 
 export default function DashboardChefAtelier() {
-  const [dossiers, setDossiers] = useState<any[]>([])
-  const [selectedDossier, setSelectedDossier] = useState<any | null>(null)
+  const [dossiers, setDossiers] = useState<DossierAtelier[]>([])
+  const [selectedDossier, setSelectedDossier] = useState<DossierAtelier | null>(null)
   const [loadingData, setLoadingData] = useState(true)
 
-  const [alertDevisPret, setAlertDevisPret] = useState<any | null>(null)
-  const [alertClientValide, setAlertClientValide] = useState<any | null>(null)
+  const [alertDevisPret, setAlertDevisPret] = useState<DossierAtelier | null>(null)
+  const [alertClientValide, setAlertClientValide] = useState<DossierAtelier | null>(null)
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([])
 
   const [mainParts, setMainParts] = useState<PartItem[]>([])
@@ -57,6 +68,7 @@ export default function DashboardChefAtelier() {
 
   const [isTransmitting, setIsTransmitting] = useState(false)
   const [isTransmitted, setIsTransmitted] = useState(false)
+  const [transmitError, setTransmitError] = useState<string | null>(null)
 
   useEffect(() => {
     if (selectedDossier) {
@@ -82,10 +94,11 @@ export default function DashboardChefAtelier() {
 
       setCheckedBlocks({ mainParts: false, peripherals: false, labor: false })
       setIsTransmitted(selectedDossier.statut === "valide_chef" || selectedDossier.statut === "valide_client")
+      setTransmitError(null)
     }
   }, [selectedDossier])
 
-  const refreshDossiers = async () => {
+  const refreshDossiers = async (): Promise<void> => {
     try {
       const list = await getAllDossiers()
       if (list && list.length > 0) {
@@ -109,7 +122,7 @@ export default function DashboardChefAtelier() {
         }
       }
     } catch (err) {
-      console.error(err)
+      console.error("Erreur rafraîchissement dossiers:", err)
     } finally {
       setLoadingData(false)
     }
@@ -121,83 +134,107 @@ export default function DashboardChefAtelier() {
     return () => clearInterval(interval)
   }, [dismissedAlerts])
 
-  const totalHeures = labor.reduce((acc, curr) => acc + (Number(curr.heures) || 0), 0)
-  const totalPiecesHT = mainParts.reduce((acc, p) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
-  const totalPeripheralsHT = peripherals.reduce((acc, p) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
-  const totalMoHT = labor.reduce((acc, l) => acc + (Number(l.heures || 0) * Number(l.taux_horaire_ht || 85)), 0)
-  const totalHT = totalPiecesHT + totalPeripheralsHT + totalMoHT
-  const totalTTC = totalHT * 1.20
+  const calculateTotals = (): QuoteTotals => {
+    const totalPiecesHT = mainParts.reduce((acc, p) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
+    const totalFournituresHT = peripherals.reduce((acc, p) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
+    const totalMoHT = labor.reduce((acc, l) => acc + (Number(l.heures || 0) * Number(l.taux_horaire_ht || 85)), 0)
+    const totalHT = totalPiecesHT + totalFournituresHT + totalMoHT
+    const tva = totalHT * 0.20
+    const totalTTC = totalHT + tva
 
-  const toggleBlock = (blockKey: "mainParts" | "peripherals" | "labor") => {
+    return {
+      totalPiecesHT,
+      totalFournituresHT,
+      totalMoHT,
+      totalHT,
+      tva,
+      totalTTC,
+      totalTTC_circulaire: totalTTC * 0.78
+    }
+  }
+
+  const totals = calculateTotals()
+
+  const toggleBlock = (blockKey: "mainParts" | "peripherals" | "labor"): void => {
     setCheckedBlocks(prev => ({ ...prev, [blockKey]: !prev[blockKey] }))
   }
 
   const allValidated = checkedBlocks.mainParts && checkedBlocks.peripherals && checkedBlocks.labor
 
-  const dismissDevisAlert = (id: string) => {
+  const dismissDevisAlert = (id: string): void => {
     setDismissedAlerts(prev => [...prev, `devis_${id}`])
     setAlertDevisPret(null)
   }
 
-  const dismissClientAlert = (id: string) => {
+  const dismissClientAlert = (id: string): void => {
     setDismissedAlerts(prev => [...prev, `client_${id}`])
     setAlertClientValide(null)
   }
 
-  const updateMainPart = (id: string, field: keyof PartItem, value: any) => {
+  const updateMainPart = (id: string, field: keyof PartItem, value: unknown): void => {
     setMainParts(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p))
   }
-  const removeMainPart = (id: string) => {
+  
+  const removeMainPart = (id: string): void => {
     setMainParts(prev => prev.filter(p => p.id !== id))
   }
-  const addMainPart = () => {
+  
+  const addMainPart = (): void => {
     setMainParts(prev => [...prev, { id: Date.now().toString(), designation: "Nouvelle pièce", ref: "OEM-REF", quantite: 1, prix_unitaire_ht: 80.00 }])
   }
 
-  const updatePeripheral = (id: string, field: keyof PartItem, value: any) => {
+  const updatePeripheral = (id: string, field: keyof PartItem, value: unknown): void => {
     setPeripherals(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p))
   }
-  const removePeripheral = (id: string) => {
+  
+  const removePeripheral = (id: string): void => {
     setPeripherals(prev => prev.filter(p => p.id !== id))
   }
-  const addPeripheral = () => {
+  
+  const addPeripheral = (): void => {
     setPeripherals(prev => [...prev, { id: Date.now().toString(), designation: "Fourniture / Consommable", ref: "CONS", quantite: 1, prix_unitaire_ht: 5.00 }])
   }
 
-  const updateLabor = (id: string, field: keyof LaborItem, value: any) => {
+  const updateLabor = (id: string, field: keyof LaborItem, value: unknown): void => {
     setLabor(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l))
   }
-  const removeLabor = (id: string) => {
+  
+  const removeLabor = (id: string): void => {
     setLabor(prev => prev.filter(l => l.id !== id))
   }
-  const addLabor = () => {
+  
+  const addLabor = (): void => {
     setLabor(prev => [...prev, { id: Date.now().toString(), operation: "Opération barémée", heures: 0.50, taux_horaire_ht: 85.00 }])
   }
 
-  const handleTransmitToClient = async () => {
+  const handleTransmitToClient = async (): Promise<void> => {
     if (!allValidated || !selectedDossier) return
+    
     setIsTransmitting(true)
+    setTransmitError(null)
 
     try {
-      await updateDossierStatusAndData(selectedDossier.id, {
+      const updatePayload: UpdateDossierInput = {
         statut: "valide_chef",
         devis_ia: {
           pieces_principales: mainParts,
           peripheriques: peripherals,
           main_oeuvre: labor,
-          totaux: {
-            totalPiecesHT,
-            totalFournituresHT: totalPeripheralsHT,
-            totalMoHT,
-            totalHT,
-            tva: totalHT * 0.20,
-            totalTTC,
-            totalTTC_circulaire: totalTTC * 0.78
-          }
+          totaux
         }
-      })
+      }
+
+      await updateDossierStatusAndData(selectedDossier.id, updatePayload)
       setIsTransmitted(true)
       refreshDossiers()
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : "Erreur inconnue"
+      setTransmitError(errorMsg)
+      console.error("Erreur transmission devis:", err)
+    } finally {
+      setIsTransmitting(false)
+    }
+  }
     } catch (err: any) {
       alert("Erreur validation : " + err.message)
     } finally {
@@ -562,7 +599,7 @@ export default function DashboardChefAtelier() {
                       <PlusCircle className="w-3.5 h-3.5" /> Ajouter une opération
                     </button>
                     <span className="text-xs font-mono text-slate-300">
-                      Total barémé : <strong className="text-emerald-400 font-bold text-sm">{totalHeures.toFixed(2)} h</strong>
+                      Total barémé : <strong className="text-emerald-400 font-bold text-sm">{labor.reduce((acc, curr) => acc + (Number(curr.heures) || 0), 0).toFixed(2)} h</strong>
                     </span>
                   </div>
                 </div>
@@ -571,18 +608,45 @@ export default function DashboardChefAtelier() {
               {/* RÉSUMÉ FINANCIER GLOBAL */}
               <section className="bg-black/60 border border-white/10 rounded-2xl p-4 flex flex-col gap-2 font-mono text-xs">
                 <div className="flex justify-between text-slate-400">
-                  <span>Total Pièces & Fournitures HT :</span>
-                  <span>{(totalPiecesHT + totalPeripheralsHT).toFixed(2)} €</span>
+                  <span>Total Pièces Principales HT :</span>
+                  <span>{totals.totalPiecesHT.toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Total Fournitures & Consommables HT :</span>
+                  <span>{totals.totalFournituresHT.toFixed(2)} €</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>Total Main-d'œuvre HT :</span>
-                  <span>{totalMoHT.toFixed(2)} €</span>
+                  <span>{totals.totalMoHT.toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between text-slate-300 pt-2 border-t border-white/10">
+                  <span>Sous-total HT :</span>
+                  <span>{totals.totalHT.toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between text-amber-400">
+                  <span>TVA 20% :</span>
+                  <span>{totals.tva.toFixed(2)} €</span>
                 </div>
                 <div className="flex justify-between text-emerald-400 font-bold text-sm pt-2 border-t border-white/10">
-                  <span>Montant Total Estimé TTC :</span>
-                  <span>{totalTTC.toFixed(2)} € TTC</span>
+                  <span>Montant Total TTC :</span>
+                  <span>{totals.totalTTC.toFixed(2)} € TTC</span>
+                </div>
+                <div className="flex justify-between text-blue-400 text-xs pt-1">
+                  <span>Circulaire 78% :</span>
+                  <span>{totals.totalTTC_circulaire.toFixed(2)} €</span>
                 </div>
               </section>
+
+              {/* MESSAGE D'ERREUR TRANSMISSION */}
+              {transmitError && (
+                <div className="bg-rose-950/40 border border-rose-500/60 rounded-2xl p-4 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-rose-300 font-semibold">Erreur lors de la transmission</p>
+                    <p className="text-xs text-rose-400 mt-1">{transmitError}</p>
+                  </div>
+                </div>
+              )}
 
               {/* TRANSMISSION */}
               <button
@@ -597,6 +661,8 @@ export default function DashboardChefAtelier() {
                 <Send className="w-5 h-5" />
                 {isTransmitting
                   ? "Validation en cours..."
+                  : isTransmitted
+                  ? "✓ Envoyé au client"
                   : allValidated
                   ? "Valider et envoyer le lien interactif au Client"
                   : "Validez les 3 blocs de contrôle pour autoriser l'envoi"}
