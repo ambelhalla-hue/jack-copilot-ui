@@ -11,42 +11,24 @@ export async function POST(req: Request) {
     if (!apiKey) return NextResponse.json({ error: "Clé API manquante." }, { status: 500 })
 
     const body = await req.json()
-    const { vehicle, immat, kilometrage, panne_constatee, options_travaux } = body
+    const { dossierId, vehicle, immat, kilometrage, panne_constatee, options_travaux } = body
 
-    let tauxT1 = 75.00
-    let tauxT2 = 95.00
-    let tauxT3 = 120.00
+    const tauxT1 = 75.00
+    const tauxT2 = 95.00
 
-    try {
-      if (supabaseUrl && supabaseAnonKey) {
-        const resParam = await fetch(`${supabaseUrl}/rest/v1/parametres_atelier?select=*&limit=1`, {
-          headers: { "apikey": supabaseAnonKey, "Authorization": `Bearer ${supabaseAnonKey}` }
-        })
-        const params = await resParam.json()
-        if (params && params.length > 0) {
-          tauxT1 = Number(params[0].taux_t1) || 75.00
-          tauxT2 = Number(params[0].taux_t2) || 95.00
-          tauxT3 = Number(params[0].taux_t3) || 120.00
-        }
-      }
-    } catch (e) {
-      console.error("Lecture parametres Supabase ignorée", e)
-    }
-
-    const userPrompt = `Tu es un chiffreur expert après-vente automobile.
-Génère la nomenclature chiffrée en JSON STRICT (sans markdown, sans aucun texte autour) pour :
-Véhicule : ${vehicle || "Peugeot 308 II"} (${immat || "AA-123-BB"}) - Compteur : ${kilometrage || "120000"} km
-Constats mécanicien : ${panne_constatee || "Remplacement pièces usées"}
+    const userPrompt = `Génère le chiffrage en JSON STRICT (sans markdown, sans texte autour) pour :
+Véhicule : ${vehicle || "Peugeot 308 II"} (${immat || "AA-123-BB"}) - ${kilometrage || "120000"} km
+Panne mécanique : ${panne_constatee || "Remplacement pièces"}
 Contrôles sécurité : ${options_travaux || "Non spécifié"}
 
-RÈGLES STRICTES :
-1. EXHAUSTIVITÉ : Crée une ligne dans "pieces_principales" pour la panne ET pour CHAQUE anomalie signalée.
-2. RÈGLE FREINAGE : Si des disques sont signalés, inclus obligatoirement les disques ET les plaquettes associées.
-3. CONSTAT SYNTHÉTIQUE : Rédige dans "constat_court" UNIQUEMENT la liste des pièces (ex: "À remplacer : Amortisseurs AV + Coupelles + Géométrie").
+RÈGLES :
+1. Crée une ligne dans "pieces_principales" pour la panne ET pour chaque anomalie signalée.
+2. Disques à remplacer = Disques ET plaquettes obligatoires.
+3. Rédige dans "constat_court" UNIQUEMENT la liste des pièces à remplacer (ex: "À remplacer : Amortisseurs AV + Coupelles").
 
 Format JSON attendu :
 {
-  "constat_court": "À remplacer : Amortisseurs AV + Coupelles",
+  "constat_court": "À remplacer : Amortisseurs avant + Coupelles",
   "pieces_principales": [
     { "id": "1", "designation": "Jeu d'amortisseurs avant", "ref": "OEM-AMORT", "quantite": 1, "prix_unitaire_ht": 160.00 },
     { "id": "2", "designation": "Kit coupelles de suspension avant", "ref": "OEM-COUP", "quantite": 1, "prix_unitaire_ht": 45.00 }
@@ -104,20 +86,41 @@ Format JSON attendu :
     const tva = totalHT * 0.20
     const totalTTC = totalHT + tva
 
-    return NextResponse.json({
-      constat_court: devis.constat_court || panne_constatee,
-      devis: {
-        ...devis,
-        totaux: {
-          totalPiecesHT,
-          totalFournituresHT,
-          totalMoHT,
-          totalHT,
-          tva,
-          totalTTC,
-          totalTTC_circulaire: totalTTC * 0.78
-        }
+    const devisComplet = {
+      ...devis,
+      totaux: {
+        totalPiecesHT,
+        totalFournituresHT,
+        totalMoHT,
+        totalHT,
+        tva,
+        totalTTC,
+        totalTTC_circulaire: totalTTC * 0.78
       }
+    }
+
+    const constatFinal = devis.constat_court || panne_constatee
+
+    if (supabaseUrl && supabaseAnonKey && dossierId) {
+      fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?id=eq.${dossierId}`, {
+        method: "PATCH",
+        headers: {
+          "apikey": supabaseAnonKey,
+          "Authorization": `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal"
+        },
+        body: JSON.stringify({
+          statut: "devis_genere",
+          constats_technicien: constatFinal,
+          devis_ia: devisComplet
+        })
+      }).catch(err => console.error("Erreur mise a jour Supabase :", err))
+    }
+
+    return NextResponse.json({
+      constat_court: constatFinal,
+      devis: devisComplet
     })
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Erreur calcul devis." }, { status: 500 })
