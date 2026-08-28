@@ -9,44 +9,39 @@ import {
   AlertTriangle, 
   FileText, 
   Layers, 
-  Camera,
-  Mic,
-  MicOff,
-  ArrowRight,
-  Disc,
-  Trash2
+  Camera, 
+  Mic, 
+  MicOff, 
+  ArrowRight, 
+  Disc, 
+  Trash2,
+  ArrowLeft
 } from "lucide-react"
-import { getAllDossiers, updateDossierStatusAndData } from "@/lib/supabase"
+import { getAllDossiers } from "@/lib/supabase"
+
+interface Dossier {
+  id: string
+  immatriculation: string
+  vin: string
+  kilometrage: number
+  statut: string
+  constats_technicien: string
+  photos_tour_vehicule: string[]
+  created_at: string
+}
 
 export default function AtelierTech() {
-  const [dossierId, setDossierId] = useState<string | null>(null)
-  const [plate, setPlate] = useState("AA-123-BB")
-  const [vehicle, setVehicle] = useState("Peugeot 308 II - 1.5 BlueHDi 130")
-  const [mileage, setMileage] = useState("120000")
-  const [receptionMotif, setReceptionMotif] = useState("Inspection demandée")
+  const [dossiers, setDossiers] = useState<Dossier[]>([])
+  const [loadingList, setLoadingList] = useState(true)
+  const [selectedDossier, setSelectedDossier] = useState<Dossier | null>(null)
 
-  // Chargement du dossier actif depuis Supabase
-  useEffect(() => {
-    const loadDossier = async () => {
-      try {
-        const list = await getAllDossiers()
-        if (list && list.length > 0) {
-          const active = list.find((d: any) => d.statut !== "valide_chef" && d.statut !== "valide_client") || list[0]
-          setDossierId(active.id)
-          if (active.immatriculation) setPlate(active.immatriculation)
-          if (active.vin) setVehicle(active.vin)
-          if (active.kilometrage) setMileage(active.kilometrage)
-          if (active.motifCCS) setReceptionMotif(active.motifCCS)
-        }
-      } catch (error) {
-        console.error("Erreur de liaison Supabase", error)
-      }
-    }
-    loadDossier()
-  }, [])
+  const [plate, setPlate] = useState("")
+  const [vehicle, setVehicle] = useState("")
+  const [mileage, setMileage] = useState("")
+  const [receptionMotif, setReceptionMotif] = useState("")
 
   const [dtc, setDtc] = useState("P0234")
-  const [symptoms, setSymptoms] = useState("Perte de puissance sous charge")
+  const [symptoms, setSymptoms] = useState("")
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState("")
   const [loadingDiag, setLoadingDiag] = useState(false)
@@ -56,9 +51,14 @@ export default function AtelierTech() {
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<any>(null)
 
-  const [quickChecks, setQuickChecks] = useState({
-    pneusAV: "bon", pneusAR: "bon", plaquettesAV: "bon", plaquettesAR: "bon",
-    disquesAV: "bon", disquesAR: "bon", batterie: "bon"
+  const [quickChecks, setQuickChecks] = useState<Record<string, string>>({
+    pneusAV: "bon",
+    pneusAR: "bon",
+    plaquettesAV: "bon",
+    disquesAV: "bon",
+    plaquettesAR: "bon",
+    disquesAR: "bon",
+    batterie: "bon",
   })
 
   const [techPhotos, setTechPhotos] = useState<string[]>([])
@@ -67,6 +67,41 @@ export default function AtelierTech() {
   const [panneConstatee, setPanneConstatee] = useState("")
   const [loadingDevis, setLoadingDevis] = useState(false)
   const [devisTransmis, setDevisTransmis] = useState(false)
+
+  const checkLabels: Record<string, string> = {
+    pneusAV: "Pneus AV",
+    pneusAR: "Pneus AR",
+    plaquettesAV: "Plaquettes AV",
+    disquesAV: "Disques AV",
+    plaquettesAR: "Plaquettes AR",
+    disquesAR: "Disques/Tambours AR",
+    batterie: "Batterie 12V",
+  }
+
+  const getSecurityAnomalies = () => {
+    const list: string[] = []
+    Object.entries(quickChecks).forEach(([key, val]) => {
+      if (val === "urgent") list.push(`${checkLabels[key]} (URGENT)`)
+      if (val === "a_prevoir") list.push(`${checkLabels[key]} (À PRÉVOIR)`)
+    })
+    return list
+  }
+
+  const loadDossiersList = async () => {
+    setLoadingList(true)
+    try {
+      const list = await getAllDossiers()
+      setDossiers(list || [])
+    } catch (err) {
+      console.error("Erreur chargement Supabase", err)
+    } finally {
+      setLoadingList(false)
+    }
+  }
+
+  useEffect(() => {
+    loadDossiersList()
+  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -78,7 +113,7 @@ export default function AtelierTech() {
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition()
         recognition.continuous = true
-        recognition.interimResults = false // Empêche la répétition des syllabes
+        recognition.interimResults = false
         recognition.lang = "fr-FR"
 
         recognition.onresult = (event: any) => {
@@ -103,10 +138,7 @@ export default function AtelierTech() {
   }, [])
 
   const toggleListening = () => {
-    if (!recognitionRef.current) {
-      alert("Dictée vocale non disponible.")
-      return
-    }
+    if (!recognitionRef.current) return
     if (isListening) {
       recognitionRef.current.stop()
       setIsListening(false)
@@ -116,8 +148,25 @@ export default function AtelierTech() {
     }
   }
 
+  const handleSelectVehicle = (d: Dossier) => {
+    setSelectedDossier(d)
+    setPlate(d.immatriculation)
+    setVehicle(d.vin || "Véhicule client")
+    setMileage(d.kilometrage ? d.kilometrage.toString() : "")
+    setReceptionMotif(d.constats_technicien || "Entretien courant")
+    setSymptoms(d.constats_technicien || "")
+    setPanneConstatee(d.constats_technicien || "")
+    setMessages([])
+  }
+
+  const handleBackToList = () => {
+    setSelectedDossier(null)
+    loadDossiersList()
+  }
+
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim()) return
+
     const newMessages = [...messages, { role: "user", content: textToSend }]
     setMessages(newMessages)
     setInput("")
@@ -136,13 +185,7 @@ export default function AtelierTech() {
       })
       
       const data = await res.json()
-      const assistantText = data.error ? `Erreur: ${data.error}` : data.response
-      setMessages(prev => [...prev, { role: "assistant", content: assistantText }])
-
-      // Auto-remplissage du constat si Jack formule sa recommandation
-      if (!data.error && data.response) {
-        setPanneConstatee(data.response.slice(0, 300))
-      }
+      setMessages(prev => [...prev, { role: "assistant", content: data.error ? `Erreur: ${data.error}` : data.response }])
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Erreur de connexion au serveur de diagnostic." }])
     } finally {
@@ -172,135 +215,43 @@ export default function AtelierTech() {
     setTechPhotos(prev => prev.filter((_, i) => i !== idx))
   }
 
-  import { NextResponse } from "next/server"
-
-export const maxDuration = 60
-
-export async function POST(req: Request) {
-  try {
-    const apiKey = process.env.GEMINI_API_KEY
-    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-
-    if (!apiKey) return NextResponse.json({ error: "Clé API manquante." }, { status: 500 })
-
-    const body = await req.json()
-    const { dossierId, vehicle, immat, kilometrage, panne_constatee, options_travaux } = body
-
-    const tauxT1 = 75.00
-    const tauxT2 = 95.00
-
-    const userPrompt = `Génère le chiffrage en JSON STRICT (sans markdown, sans texte autour) pour :
-Véhicule : ${vehicle || "Peugeot 308 II"} (${immat || "AA-123-BB"}) - ${kilometrage || "120000"} km
-Panne mécanique : ${panne_constatee || "Remplacement pièces"}
-Contrôles sécurité : ${options_travaux || "Non spécifié"}
-
-RÈGLES :
-1. Crée une ligne dans "pieces_principales" pour la panne ET pour chaque anomalie signalée.
-2. Disques à remplacer = Disques ET plaquettes obligatoires.
-3. Rédige dans "constat_court" UNIQUEMENT la liste des pièces à remplacer (ex: "À remplacer : Amortisseurs AV + Coupelles").
-
-Format JSON attendu :
-{
-  "constat_court": "À remplacer : Amortisseurs avant + Coupelles",
-  "pieces_principales": [
-    { "id": "1", "designation": "Jeu d'amortisseurs avant", "ref": "OEM-AMORT", "quantite": 1, "prix_unitaire_ht": 160.00 },
-    { "id": "2", "designation": "Kit coupelles de suspension avant", "ref": "OEM-COUP", "quantite": 1, "prix_unitaire_ht": 45.00 }
-  ],
-  "peripheriques": [
-    { "id": "1", "designation": "Kit visserie neuve & fournitures atelier", "ref": "CONS-01", "quantite": 1, "prix_unitaire_ht": 12.50 }
-  ],
-  "main_oeuvre": [
-    { "id": "1", "operation": "Remplacement amortisseurs avant et réglage géométrie", "heures": 2.20, "taux_horaire_ht": ${tauxT2} }
-  ]
-}`
-
-    let devis: any = null
+  const handleGenerateAndSendToChef = async () => {
+    setLoadingDevis(true)
+    const anomalies = getSecurityAnomalies()
+    
+    let basePanne = panneConstatee.trim()
+    if (!basePanne || basePanne.length < 2) {
+      basePanne = `Intervention défaut ${dtc} (${symptoms})`
+    }
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-            generationConfig: { response_mime_type: "application/json" }
-          })
-        }
-      )
-
-      const data = await response.json()
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text
-      if (rawText) devis = JSON.parse(rawText)
-    } catch (e) {
-      console.error("Erreur parsing IA", e)
-    }
-
-    if (!devis || !Array.isArray(devis.pieces_principales) || devis.pieces_principales.length === 0) {
-      devis = {
-        constat_court: panne_constatee || "Remplacement pièces défectueuses",
-        pieces_principales: [
-          { id: "1", designation: panne_constatee || "Organe principal de rechange", ref: "OEM-STD", quantite: 1, prix_unitaire_ht: 120.00 }
-        ],
-        peripheriques: [
-          { id: "1", designation: "Fournitures atelier & consommables", ref: "CONS-01", quantite: 1, prix_unitaire_ht: 8.50 }
-        ],
-        main_oeuvre: [
-          { id: "1", operation: "Main-d'œuvre intervention atelier", heures: 1.20, taux_horaire_ht: tauxT1 }
-        ]
-      }
-    }
-
-    const totalPiecesHT = (devis.pieces_principales || []).reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
-    const totalFournituresHT = (devis.peripheriques || []).reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
-    const totalMoHT = (devis.main_oeuvre || []).reduce((acc: number, m: any) => acc + (Number(m.heures || 0) * Number(m.taux_horaire_ht || tauxT1)), 0)
-
-    const totalHT = totalPiecesHT + totalFournituresHT + totalMoHT
-    const tva = totalHT * 0.20
-    const totalTTC = totalHT + tva
-
-    const devisComplet = {
-      ...devis,
-      totaux: {
-        totalPiecesHT,
-        totalFournituresHT,
-        totalMoHT,
-        totalHT,
-        tva,
-        totalTTC,
-        totalTTC_circulaire: totalTTC * 0.78
-      }
-    }
-
-    const constatFinal = devis.constat_court || panne_constatee
-
-    if (supabaseUrl && supabaseAnonKey && dossierId) {
-      fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?id=eq.${dossierId}`, {
-        method: "PATCH",
-        headers: {
-          "apikey": supabaseAnonKey,
-          "Authorization": `Bearer ${supabaseAnonKey}`,
-          "Content-Type": "application/json",
-          "Prefer": "return=minimal"
-        },
+      const res = await fetch("/api/devis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          statut: "devis_genere",
-          constats_technicien: constatFinal,
-          devis_ia: devisComplet
+          dossierId: selectedDossier?.id || null,
+          vehicle: vehicle || "Véhicule Atelier",
+          immat: plate || "AA-123-BB",
+          kilometrage: mileage || "100000",
+          panne_constatee: basePanne,
+          options_travaux: anomalies.length > 0 ? anomalies.join(", ") : "Contrôles conformes"
         })
-      }).catch(err => console.error("Erreur mise a jour Supabase :", err))
-    }
+      })
 
-    return NextResponse.json({
-      constat_court: constatFinal,
-      devis: devisComplet
-    })
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Erreur calcul devis." }, { status: 500 })
+      const data = await res.json()
+
+      if (data && data.devis) {
+        setDevisTransmis(true)
+      } else {
+        alert("Erreur chiffrage : " + (data?.error || "Réponse invalide"))
+      }
+    } catch (err: any) {
+      alert("Erreur réseau : " + (err?.message || "Connexion impossible"))
+    } finally {
+      setLoadingDevis(false)
+    }
   }
-}
-  
+
   const checkItems = [
     { key: "pneusAV", label: "Pneus AV" },
     { key: "pneusAR", label: "Pneus AR" },
@@ -311,14 +262,85 @@ Format JSON attendu :
     { key: "batterie", label: "Batterie 12V" },
   ]
 
+  if (!selectedDossier) {
+    return (
+      <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-4 md:p-6 gap-5">
+        <header className="flex justify-between items-center p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-cyan-600/20 border border-cyan-500/30 rounded-xl text-cyan-400">
+              <Wrench className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="font-bold text-slate-100 text-base md:text-lg">File d'Attente Atelier</h1>
+              <p className="text-xs text-slate-400">Sélectionnez le véhicule à prendre en charge</p>
+            </div>
+          </div>
+          <button
+            onClick={loadDossiersList}
+            disabled={loadingList}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-xl text-xs text-slate-300 flex items-center gap-1.5 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingList ? "animate-spin text-cyan-400" : ""}`} /> Actualiser
+          </button>
+        </header>
+
+        {loadingList ? (
+          <div className="text-center py-12 text-slate-500 text-xs flex items-center justify-center gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" /> Chargement des véhicules...
+          </div>
+        ) : dossiers.length === 0 ? (
+          <div className="text-center py-12 bg-[#111827]/40 border border-white/5 rounded-2xl text-slate-400 text-xs">
+            Aucun véhicule en attente. Créez une entrée sur l'écran Réception (/ccs).
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {dossiers.map((d) => (
+              <div
+                key={d.id}
+                onClick={() => handleSelectVehicle(d)}
+                className="bg-[#111827]/80 border border-white/10 hover:border-cyan-500/50 p-4 rounded-2xl flex justify-between items-center gap-4 cursor-pointer transition-all duration-200 shadow-lg group hover:bg-slate-900"
+              >
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold px-2.5 py-1 bg-blue-950 border border-blue-700/50 text-blue-400 rounded-lg">
+                      {d.immatriculation}
+                    </span>
+                    <h3 className="font-bold text-slate-200 text-sm truncate group-hover:text-cyan-300">
+                      {d.vin || "Véhicule client"}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-400 line-clamp-1">
+                    Motif : <span className="text-slate-300">{d.constats_technicien || "Non précisé"}</span>
+                  </p>
+                  <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono">
+                    <span>{d.kilometrage ? `${d.kilometrage.toLocaleString("fr-FR")} km` : "Km non renseigné"}</span>
+                    <span>• {d.photos_tour_vehicule?.length || 0} photo(s) CCS</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs shrink-0 group-hover:translate-x-1 transition-transform">
+                  Prendre en charge <ArrowRight className="w-4 h-4" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-3 md:p-5 gap-4 selection:bg-blue-500/30">
       
       <header className="p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-cyan-600/20 border border-cyan-500/30 rounded-xl text-cyan-400">
-            <Wrench className="w-5 h-5" />
-          </div>
+          <button
+            onClick={handleBackToList}
+            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-white/10 transition cursor-pointer"
+            title="Changer de véhicule"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
@@ -327,15 +349,16 @@ Format JSON attendu :
               <h1 className="font-bold text-slate-100 text-sm md:text-base">{vehicle}</h1>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Compteur : <strong className="text-emerald-400">{mileage} km</strong> • Motif CCS : <span className="text-slate-300">{receptionMotif}</span>
+              Compteur : <strong className="text-emerald-400">{mileage} km</strong> • Motif : <span className="text-slate-300">{receptionMotif}</span>
             </p>
           </div>
         </div>
-        <span className="text-[10px] font-mono uppercase px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded-full font-semibold self-end md:self-auto">
+        <span className="text-[10px] font-mono uppercase px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded-full font-semibold">
           Poste Technicien
         </span>
       </header>
 
+      {/* 1. POINTS DE CONTRÔLE EXPRESS */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -346,7 +369,7 @@ Format JSON attendu :
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 text-xs">
           {checkItems.map((item) => {
-            const val = (quickChecks as any)[item.key]
+            const val = quickChecks[item.key]
             return (
               <div key={item.key} className="bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 flex flex-col justify-between gap-2">
                 <span className="text-[11px] text-slate-300 font-medium leading-tight">{item.label}</span>
@@ -372,6 +395,7 @@ Format JSON attendu :
         </div>
       </section>
 
+      {/* 2. RECHERCHE DE PANNE & PHOTOS DIAGBOX */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -506,6 +530,7 @@ Format JSON attendu :
         </div>
       </section>
 
+      {/* 3. CONSTAT & TRANSMISSION AU CHEF */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
           <FileText className="w-4 h-4 text-emerald-400" /> 3. Constat Final & Transmission au Chef
@@ -516,7 +541,7 @@ Format JSON attendu :
             <CheckCircle2 className="w-8 h-8 text-emerald-400" />
             <h3 className="font-bold text-xs md:text-sm text-emerald-300">Dossier et contrôles transmis au Chef d'Atelier !</h3>
             <p className="text-[11px] text-slate-300">
-              Le chiffrage complet a été calculé par l'IA et attend validation sur la tour de contrôle.
+              Le chiffrage complet a été calculé et attend validation sur la tour de contrôle.
             </p>
             <button
               onClick={() => setDevisTransmis(false)}
@@ -530,17 +555,17 @@ Format JSON attendu :
             <textarea
               value={panneConstatee}
               onChange={(e) => setPanneConstatee(e.target.value)}
-              rows={3}
+              rows={2}
               className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3 text-xs text-slate-200 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40 font-mono"
-              placeholder="Constat automatique généré par Jack..."
+              placeholder="Ex: Remplacement amortisseurs avant + coupelles..."
             />
 
             <button
               type="button"
               onClick={handleGenerateAndSendToChef}
-              disabled={loadingDevis}
+              disabled={loadingDevis || !panneConstatee.trim()}
               className={`py-3 px-4 rounded-xl font-bold text-xs md:text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
-                !loadingDevis
+                !loadingDevis && panneConstatee.trim()
                   ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] cursor-pointer"
                   : "bg-slate-800 text-slate-500 cursor-not-allowed"
               }`}
@@ -548,7 +573,7 @@ Format JSON attendu :
               {loadingDevis ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Génération et envoi base de données...
+                  Transmission du devis en cours...
                 </>
               ) : (
                 <>
