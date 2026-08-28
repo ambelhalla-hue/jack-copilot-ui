@@ -55,17 +55,17 @@ export const ENGINE_CODES: Record<string, EngineCode> = {
 
 // DTC (Diagnostic Trouble Code) database
 export const DTC_DATABASE: Record<string, DTC> = {
-  'P0010': { code: 'P0010', description: 'Defaut position arbre a cames', manufacturer: ['*'], commonCauses: ['Capteur position arbre', 'Chaine distribution', 'Calculateur moteur'] },
-  'P0011': { code: 'P0011', description: 'Retard arbre a cames (Admission)', manufacturer: ['*'], commonCauses: ['Chaine distribution usee', 'Tendeur huile', 'Capteur CMP'] },
-  'P0014': { code: 'P0014', description: 'Retard arbre a cames (Echappement)', manufacturer: ['*'], commonCauses: ['Chaine distribution', 'Capteur CMP echappement', 'VVT solenoid'] },
-  'P0100': { code: 'P0100', description: 'Defaut debitmetre masse air', manufacturer: ['*'], commonCauses: ['Capteur MAF encrase', 'Fuite admission', 'Filtre air encrase'] },
-  'P0101': { code: 'P0101', description: 'Debitmetre masse air hors plage', manufacturer: ['*'], commonCauses: ['Capteur MAF defaut', 'Fuite air', 'Filtre encrase'] },
-  'P0234': { code: 'P0234', description: 'Suralimentation insuffisante', manufacturer: ['*'], commonCauses: ['Turbo endommage', 'Fuite compresseur', 'Vanne wastegate'] },
-  'P0335': { code: 'P0335', description: 'Defaut capteur PMH', manufacturer: ['*'], commonCauses: ['Capteur PMH defaut', 'Connecteur oxyde', 'Relucteur endommage'] },
-  'P0400': { code: 'P0400', description: 'Systeme EGR defaut', manufacturer: ['*'], commonCauses: ['Vanne EGR encrassee', 'Electrovanne EGR', 'Tuyau encrassee'] },
-  'P0504': { code: 'P0504', description: 'Defaut correlation freinage', manufacturer: ['*'], commonCauses: ['Liquide frein bas', 'Detecteur usure plaquettes', 'Calculateur freinage'] },
-  'P0725': { code: 'P0725', description: 'Defaut capteur vitesse moteur', manufacturer: ['*'], commonCauses: ['Capteur PMH defaut', 'Connecteur oxyde', 'Calculateur moteur'] },
-  'P1000': { code: 'P1000', description: 'Defaut diagnostique incapable', manufacturer: ['*'], commonCauses: ['Batterie faible', 'Connexions oxydees'] },
+  'P0010': { code: 'P0010', description: 'Défaut position arbre à cames', manufacturer: ['*'], commonCauses: ['Capteur position arbre', 'Chaîne distribution', 'Calculateur moteur'] },
+  'P0011': { code: 'P0011', description: 'Retard arbre à cames (Admission)', manufacturer: ['*'], commonCauses: ['Chaîne distribution usée', 'Tendeur huile', 'Capteur CMP'] },
+  'P0014': { code: 'P0014', description: 'Retard arbre à cames (Échappement)', manufacturer: ['*'], commonCauses: ['Chaîne distribution', 'Capteur CMP échappement', 'VVT solénoïde'] },
+  'P0100': { code: 'P0100', description: 'Défaut débitmètre masse d\'air', manufacturer: ['*'], commonCauses: ['Capteur MAF encrassé', 'Fuite admission', 'Filtre à air encrassé'] },
+  'P0101': { code: 'P0101', description: 'Débitmètre masse d\'air hors plage', manufacturer: ['*'], commonCauses: ['Capteur MAF en défaut', 'Fuite d\'air', 'Filtre encrassé'] },
+  'P0234': { code: 'P0234', description: 'Suralimentation insuffisante', manufacturer: ['*'], commonCauses: ['Turbo endommagé', 'Fuite compresseur', 'Vanne wastegate'] },
+  'P0335': { code: 'P0335', description: 'Défaut capteur PMH', manufacturer: ['*'], commonCauses: ['Capteur PMH en défaut', 'Connecteur oxydé', 'Relucteur endommagé'] },
+  'P0400': { code: 'P0400', description: 'Système EGR en défaut', manufacturer: ['*'], commonCauses: ['Vanne EGR encrassée', 'Électrovanne EGR', 'Conduit encrassé'] },
+  'P0504': { code: 'P0504', description: 'Défaut corrélation freinage', manufacturer: ['*'], commonCauses: ['Liquide de frein bas', 'Détecteur usure plaquettes', 'Calculateur freinage'] },
+  'P0725': { code: 'P0725', description: 'Défaut capteur vitesse moteur', manufacturer: ['*'], commonCauses: ['Capteur PMH en défaut', 'Connecteur oxydé', 'Calculateur moteur'] },
+  'P1000': { code: 'P1000', description: 'Diagnostic système incomplet', manufacturer: ['*'], commonCauses: ['Batterie faible', 'Connexions oxydées'] },
 }
 
 // TSB Knowledge base (simplified)
@@ -101,7 +101,7 @@ export const TSB_DATABASE: TSBEntry[] = [
     rootCause: 'FAP encrassé, problème régénération, EGR encrassée',
     replacement: 'Nettoyage/Remplacement FAP, nettoyage EGR',
     timeEstimate: 3.0,
-    commonParts: ['Filtre à particules', 'Electrovanne EGR', 'Sonde lambda', 'Fluide de nettoyage'],
+    commonParts: ['Filtre à particules', 'Électrovanne EGR', 'Sonde lambda', 'Fluide de nettoyage'],
   },
   {
     id: 'renault-k9k-dci-injector',
