@@ -10,22 +10,31 @@ export async function POST(req: Request) {
     const body = await req.json()
     const { vehicle, immat, kilometrage, panne_constatee, options_travaux } = body
 
-    const userPrompt = `Tu es un expert chiffrage après-vente automobile.
-Génère la nomenclature détaillée et chiffrée en JSON STRICT (sans markdown, sans texte autour) pour l'intervention suivante :
-Véhicule : ${vehicle || "Peugeot 308"} (${immat || "AA-123-BB"}), ${kilometrage || "120000"} km
-Constat atelier / Panne : ${panne_constatee || "Remplacement batterie"}
-Contrôles : ${options_travaux || "Non spécifié"}
+    const userPrompt = `Tu es un chiffreur expert après-vente automobile.
+Génère une simulation de devis ultra-détaillée et exhaustive sous forme d'un objet JSON STRICT (sans markdown, sans aucun texte autour) pour l'intervention suivante :
 
-Structure JSON obligatoire :
+Véhicule : ${vehicle || "Peugeot 308 II"} (${immat || "AA-123-BB"}) - Compteur : ${kilometrage || "120000"} km
+Constats / Panne déclarée : ${panne_constatee || "Remplacement batterie 12V et révision"}
+Contrôles atelier (usures signalées) : ${options_travaux || "Batterie faible, freinage à contrôler"}
+
+RÈGLES STRICTES DE CHIFFRAGE :
+1. "pieces_principales" : Découpe chaque pièce requise avec un prix unitaire HT réaliste (prix_unitaire_ht) et une référence OE réaliste. Inclus les organes de la panne ET chaque point noté "urgent" ou "a_prevoir".
+2. "peripheriques" : Inclus les éléments secondaires obligatoires (pochette de joints, visserie neuve, dégraissant, nettoyant freins, fluides/huiles normées, recyclage).
+3. "main_oeuvre" : Découpe les opérations en centièmes d'heures (heures) avec un taux horaire HT (taux_horaire_ht : 85.00).
+
+FORMAT JSON STRICT ATTENDU :
 {
   "pieces_principales": [
-    { "id": "1", "designation": "${panne_constatee || 'Composant principal'}", "ref": "OEM-PR", "quantite": 1, "prix_unitaire_ht": 120.00 }
+    { "id": "1", "designation": "Batterie 12V 70Ah 720A EFB / AGM", "ref": "16 824 512 80", "quantite": 1, "prix_unitaire_ht": 135.00 },
+    { "id": "2", "designation": "Jeu de plaquettes de frein avant", "ref": "16 172 834 80", "quantite": 1, "prix_unitaire_ht": 68.00 }
   ],
   "peripheriques": [
-    { "id": "1", "designation": "Fournitures d'atelier et recyclage", "ref": "CONS-01", "quantite": 1, "prix_unitaire_ht": 8.50 }
+    { "id": "1", "designation": "Nettoyant freins & dégraissant haute pression", "ref": "CONS-01", "quantite": 1, "prix_unitaire_ht": 7.50 },
+    { "id": "2", "designation": "Traitement & recyclage batterie usagée", "ref": "ECO-BAT", "quantite": 1, "prix_unitaire_ht": 4.50 }
   ],
   "main_oeuvre": [
-    { "id": "1", "operation": "Dépose / Repose et paramétrage", "heures": 0.8, "taux_horaire_ht": 85.00 }
+    { "id": "1", "operation": "Remplacement batterie 12V et réinitialisation BMS", "heures": 0.40, "taux_horaire_ht": 85.00 },
+    { "id": "2", "operation": "Remplacement plaquettes de frein avant", "heures": 0.80, "taux_horaire_ht": 85.00 }
   ]
 }`
 
@@ -50,20 +59,23 @@ Structure JSON obligatoire :
         devis = JSON.parse(rawText)
       }
     } catch (e) {
-      console.error("Erreur parsing IA, passage au fallback direct", e)
+      console.error("Erreur parsing IA devis", e)
     }
 
-    // Sécurité absolue : si l'IA n'a pas renvoyé la structure, on injecte les données minimums
-    if (!devis || !devis.pieces_principales || devis.pieces_principales.length === 0) {
+    // Sécurité de secours : simulation par défaut immédiate si l'IA tarde ou échoue
+    if (!devis || !Array.isArray(devis.pieces_principales) || devis.pieces_principales.length === 0) {
       devis = {
         pieces_principales: [
-          { id: "1", designation: panne_constatee || "Batterie 12V", ref: "OEM-STD", quantite: 1, prix_unitaire_ht: 115.00 }
+          { id: "1", designation: panne_constatee && panne_constatee.length > 3 ? panne_constatee : "Batterie 12V Stop&Start", ref: "16 824 512 80", quantite: 1, prix_unitaire_ht: 135.00 },
+          { id: "2", designation: "Jeu de plaquettes de frein avant", ref: "16 172 834 80", quantite: 1, prix_unitaire_ht: 65.00 }
         ],
         peripheriques: [
-          { id: "1", designation: "Fournitures et recyclage atelier", ref: "DIV-01", quantite: 1, prix_unitaire_ht: 6.00 }
+          { id: "1", designation: "Fournitures d'atelier & nettoyant freins", ref: "CONS-01", quantite: 1, prix_unitaire_ht: 8.50 },
+          { id: "2", designation: "Traitement des déchets et recyclage", ref: "DECH-02", quantite: 1, prix_unitaire_ht: 4.50 }
         ],
         main_oeuvre: [
-          { id: "1", operation: "Main d'œuvre remplacement", heures: 0.5, taux_horaire_ht: 85.00 }
+          { id: "1", operation: "Dépose / Repose composant principal et paramétrage", "heures": 0.60, "taux_horaire_ht": 85.00 },
+          { id: "2", operation: "Contrôle circuit de charge et mémoire calculateur", "heures": 0.30, "taux_horaire_ht": 85.00 }
         ]
       }
     }
@@ -86,7 +98,7 @@ Structure JSON obligatoire :
           totalHT,
           tva,
           totalTTC,
-          totalTTC_circulaire: totalTTC * 0.80
+          totalTTC_circulaire: totalTTC * 0.78
         }
       }
     })
