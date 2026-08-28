@@ -205,7 +205,7 @@ export function getManufacturerRules(manufacturer: string): {
       torqueSpecs: {
         'Culasse': 90,
         'Poulie vilebrequin': 150,
-        'Couronne volant',: 60,
+        'Couronne volant': 60,
       },
       timingPinInfo: {
         'piston1': 'PMH culasse, utiliser outil calage VAG',
