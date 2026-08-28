@@ -64,7 +64,7 @@ export default function AtelierTech() {
   const [techPhotos, setTechPhotos] = useState<string[]>([])
   const techPhotoInputRef = useRef<HTMLInputElement>(null)
 
-  const [panneConstatee, setPanneConstatee] = useState("Remplacement boîte de vitesses 6 rapports et kit embrayage bi-masse")
+  const [panneConstatee, setPanneConstatee] = useState("")
   const [loadingDevis, setLoadingDevis] = useState(false)
   const [devisTransmis, setDevisTransmis] = useState(false)
 
@@ -134,7 +134,13 @@ export default function AtelierTech() {
       })
       
       const data = await res.json()
-      setMessages(prev => [...prev, { role: "assistant", content: data.error ? `Erreur: ${data.error}` : data.response }])
+      const assistantText = data.error ? `Erreur: ${data.error}` : data.response
+      setMessages(prev => [...prev, { role: "assistant", content: assistantText }])
+
+      // Auto-remplissage du constat si Jack formule sa recommandation
+      if (!data.error && data.response) {
+        setPanneConstatee(data.response.slice(0, 300))
+      }
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Erreur de connexion au serveur de diagnostic." }])
     } finally {
@@ -165,7 +171,11 @@ export default function AtelierTech() {
   }
 
   const handleGenerateAndSendToChef = async () => {
-    if (!panneConstatee.trim()) return
+    // Si le champ est vide ou trop court, on prend le contexte par défaut
+    const constatFinal = panneConstatee.trim().length > 2 
+      ? panneConstatee.trim() 
+      : `Intervention suite au défaut ${dtc} (${symptoms})`
+
     setLoadingDevis(true)
 
     try {
@@ -176,24 +186,26 @@ export default function AtelierTech() {
           vehicle,
           immat: plate,
           kilometrage: mileage,
-          panne_constatee: panneConstatee,
+          panne_constatee: constatFinal,
           options_travaux: `Contrôles : Plaquettes AV ${quickChecks.plaquettesAV}, Disques AV ${quickChecks.disquesAV}, Plaquettes AR ${quickChecks.plaquettesAR}, Disques/Tambours AR ${quickChecks.disquesAR}, Batterie ${quickChecks.batterie}`
         })
       })
 
       const data = await res.json()
-      if (!data.error) {
+      if (!data.error && data.devis) {
         if (dossierId) {
           await updateDossierStatusAndData(dossierId, {
             statut: "devis_genere",
-            constats_technicien: panneConstatee,
+            constats_technicien: constatFinal,
             devis_ia: data.devis
           })
         }
         setDevisTransmis(true)
+      } else {
+        alert("Erreur lors de la génération du devis.")
       }
     } catch {
-      alert("Erreur lors de la génération du devis.")
+      alert("Erreur réseau lors de la transmission.")
     } finally {
       setLoadingDevis(false)
     }
@@ -428,17 +440,17 @@ export default function AtelierTech() {
             <textarea
               value={panneConstatee}
               onChange={(e) => setPanneConstatee(e.target.value)}
-              rows={2}
+              rows={3}
               className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3 text-xs text-slate-200 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40 font-mono"
-              placeholder="Ex: Remplacement boîte de vitesses + butée d'embrayage..."
+              placeholder="Constat automatique généré par Jack..."
             />
 
             <button
               type="button"
               onClick={handleGenerateAndSendToChef}
-              disabled={loadingDevis || !panneConstatee.trim()}
+              disabled={loadingDevis}
               className={`py-3 px-4 rounded-xl font-bold text-xs md:text-sm flex items-center justify-center gap-2 transition-all duration-300 ${
-                !loadingDevis && panneConstatee.trim()
+                !loadingDevis
                   ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] cursor-pointer"
                   : "bg-slate-800 text-slate-500 cursor-not-allowed"
               }`}
