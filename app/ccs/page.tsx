@@ -156,7 +156,7 @@ export default function ReceptionCCS() {
     try {
       const photosArray = angles.map(a => a.label)
 
-      const createdDossier = await insertDossierAtelier({
+      await insertDossierAtelier({
         immatriculation: immat,
         vin: vehicle,
         kilometrage: parseInt(kilometrage, 10),
@@ -183,6 +183,7 @@ export default function ReceptionCCS() {
     setAngles(prev => prev.map(a => ({ ...a, preview: null })))
     setDossierCree(false)
     setIsListening(false)
+    setCreationError(null)
   }
 
   const totalPhotosPrises = angles.filter(a => a.preview !== null).length
@@ -392,6 +393,14 @@ export default function ReceptionCCS() {
               required
             />
           </section>
+
+          {/* AFFICHAGE DE L'ERREUR SUPABASE */}
+          {creationError && (
+            <div className="p-3 text-sm font-bold text-rose-200 bg-rose-950/80 border border-rose-500/50 rounded-xl flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{creationError}</span>
+            </div>
+          )}
 
           {/* TRANSMISSION */}
           <button
