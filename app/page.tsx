@@ -6,8 +6,7 @@ import {
   Wrench, 
   ShieldCheck, 
   Smartphone, 
-  ArrowRight,
-  Sparkles
+  ArrowRight
 } from "lucide-react"
 
 export default function HomePortal() {
@@ -27,7 +26,7 @@ export default function HomePortal() {
         </p>
       </div>
 
-      {/* GRILLE DES 4 POSTES DE TRAVAIL */}
+      {/* GRILLE DES 4 POSTES */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl w-full">
         
         {/* 1. ESPACE RÉCEPTION CCS */}
@@ -108,9 +107,9 @@ export default function HomePortal() {
           </div>
         </Link>
 
-        {/* 4. VUE CLIENT INTERACTIF (SMS) -> REDIRECTION DYNAMIQUE VERS /devis */}
+        {/* 4. VUE CLIENT INTERACTIF (SMS) */}
         <Link 
-          href="/devis" 
+          href="/devis/1" 
           className="group p-5 bg-[#111827]/70 hover:bg-[#111827] border border-white/10 hover:border-emerald-500/50 rounded-2xl flex flex-col justify-between gap-4 transition-all duration-200 shadow-lg cursor-pointer"
         >
           <div className="flex justify-between items-start">
