@@ -9,54 +9,38 @@ import {
   AlertTriangle, 
   FileText, 
   Layers, 
-  Camera, 
-  Mic, 
-  MicOff, 
-  ArrowRight, 
-  Disc, 
-  Trash2,
-  ArrowLeft
+  Camera,
+  Mic,
+  MicOff,
+  ArrowRight,
+  Disc,
+  Trash2
 } from "lucide-react"
-import { getAllDossiers } from "@/lib/supabase"
-
-interface Dossier {
-  id: string
-  immatriculation: string
-  vin: string
-  kilometrage: number
-  statut: string
-  constats_technicien: string
-  photos_tour_vehicule: string[]
-  created_at: string
-}
 
 export default function AtelierTech() {
-  const [dossiers, setDossiers] = useState<Dossier[]>([])
-  const [loadingList, setLoadingList] = useState(true)
-  const [selectedDossier, setSelectedDossier] = useState<Dossier | null>(null)
-
-  const [plate, setPlate] = useState("")
-  const [vehicle, setVehicle] = useState("")
-  const [mileage, setMileage] = useState("")
-  const [receptionMotif, setReceptionMotif] = useState("")
+  const [plate] = useState("AA-123-BB")
+  const [vehicle] = useState("Peugeot 308 II - 1.5 BlueHDi 130 (DV5RC)")
+  const [mileage] = useState("120000")
+  const [receptionMotif] = useState("Bruit métallique lors des passages de rapports + à-coups")
 
   const [dtc, setDtc] = useState("P0234")
-  const [symptoms, setSymptoms] = useState("")
+  const [symptoms, setSymptoms] = useState("Perte de puissance sous charge")
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState("")
   const [loadingDiag, setLoadingDiag] = useState(false)
+  const [loadingVision, setLoadingVision] = useState(false)
   const [voltage, setVoltage] = useState("Attente de mesure...")
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<any>(null)
 
-  const [quickChecks, setQuickChecks] = useState<Record<string, string>>({
+  const [quickChecks, setQuickChecks] = useState({
     pneusAV: "bon",
     pneusAR: "bon",
     plaquettesAV: "bon",
-    disquesAV: "bon",
     plaquettesAR: "bon",
+    disquesAV: "bon",
     disquesAR: "bon",
     batterie: "bon",
   })
@@ -64,44 +48,9 @@ export default function AtelierTech() {
   const [techPhotos, setTechPhotos] = useState<string[]>([])
   const techPhotoInputRef = useRef<HTMLInputElement>(null)
 
-  const [panneConstatee, setPanneConstatee] = useState("")
+  const [panneConstatee, setPanneConstatee] = useState("Remplacement boîte de vitesses 6 rapports et kit embrayage bi-masse")
   const [loadingDevis, setLoadingDevis] = useState(false)
   const [devisTransmis, setDevisTransmis] = useState(false)
-
-  const checkLabels: Record<string, string> = {
-    pneusAV: "Pneus AV",
-    pneusAR: "Pneus AR",
-    plaquettesAV: "Plaquettes AV",
-    disquesAV: "Disques AV",
-    plaquettesAR: "Plaquettes AR",
-    disquesAR: "Disques/Tambours AR",
-    batterie: "Batterie 12V",
-  }
-
-  const getSecurityAnomalies = () => {
-    const list: string[] = []
-    Object.entries(quickChecks).forEach(([key, val]) => {
-      if (val === "urgent") list.push(`${checkLabels[key]} (URGENT)`)
-      if (val === "a_prevoir") list.push(`${checkLabels[key]} (À PRÉVOIR)`)
-    })
-    return list
-  }
-
-  const loadDossiersList = async () => {
-    setLoadingList(true)
-    try {
-      const list = await getAllDossiers()
-      setDossiers(list || [])
-    } catch (err) {
-      console.error("Erreur chargement Supabase", err)
-    } finally {
-      setLoadingList(false)
-    }
-  }
-
-  useEffect(() => {
-    loadDossiersList()
-  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -113,23 +62,22 @@ export default function AtelierTech() {
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition()
         recognition.continuous = true
-        recognition.interimResults = false
+        recognition.interimResults = true
         recognition.lang = "fr-FR"
 
         recognition.onresult = (event: any) => {
-          let finalTranscript = ""
+          let currentTranscript = ""
           for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript
-            }
+            currentTranscript += event.results[i][0].transcript
           }
-          if (finalTranscript.trim()) {
+          if (currentTranscript.trim()) {
             setInput(prev => {
-              const cleanPrev = prev.trim()
-              return cleanPrev ? `${cleanPrev} ${finalTranscript.trim()}` : finalTranscript.trim()
+              const base = prev ? prev.trim() + " " : ""
+              return base + currentTranscript
             })
           }
         }
+
         recognition.onerror = () => setIsListening(false)
         recognition.onend = () => setIsListening(false)
         recognitionRef.current = recognition
@@ -138,7 +86,10 @@ export default function AtelierTech() {
   }, [])
 
   const toggleListening = () => {
-    if (!recognitionRef.current) return
+    if (!recognitionRef.current) {
+      alert("Dictée vocale non disponible.")
+      return
+    }
     if (isListening) {
       recognitionRef.current.stop()
       setIsListening(false)
@@ -146,22 +97,6 @@ export default function AtelierTech() {
       recognitionRef.current.start()
       setIsListening(true)
     }
-  }
-
-  const handleSelectVehicle = (d: Dossier) => {
-    setSelectedDossier(d)
-    setPlate(d.immatriculation)
-    setVehicle(d.vin || "Véhicule client")
-    setMileage(d.kilometrage ? d.kilometrage.toString() : "")
-    setReceptionMotif(d.constats_technicien || "Entretien courant")
-    setSymptoms(d.constats_technicien || "")
-    setPanneConstatee(d.constats_technicien || "")
-    setMessages([])
-  }
-
-  const handleBackToList = () => {
-    setSelectedDossier(null)
-    loadDossiersList()
   }
 
   const handleSend = async (textToSend: string) => {
@@ -187,10 +122,55 @@ export default function AtelierTech() {
       const data = await res.json()
       setMessages(prev => [...prev, { role: "assistant", content: data.error ? `Erreur: ${data.error}` : data.response }])
     } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "Erreur de connexion au serveur de diagnostic." }])
+      setMessages(prev => [...prev, { role: "assistant", content: "Erreur de connexion au serveur." }])
     } finally {
       setLoadingDiag(false)
     }
+  }
+
+  // Scan Photo Diagbox / Pièce via Jack Vision
+  const handleTechPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const previewUrl = URL.createObjectURL(file)
+    setTechPhotos(prev => [...prev, previewUrl])
+    setLoadingVision(true)
+
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+      const base64String = reader.result as string
+      try {
+        const res = await fetch("/api/diag-vision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageBase64: base64String,
+            mimeType: file.type || "image/jpeg",
+            vehicleContext: `${vehicle} (${plate})`,
+            userNotes: `DTC: ${dtc}, Symptômes: ${symptoms}`
+          })
+        })
+
+        const data = await res.json()
+        const visionResult = data.result || "Aucun défaut identifié sur l'image."
+        
+        setMessages(prev => [
+          ...prev, 
+          { role: "user", content: "📷 [Photo écran / composant transmise pour analyse]" },
+          { role: "assistant", content: visionResult }
+        ])
+      } catch (err) {
+        console.error("Erreur vision :", err)
+      } finally {
+        setLoadingVision(false)
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const removeTechPhoto = (idx: number) => {
+    setTechPhotos(prev => prev.filter((_, i) => i !== idx))
   }
 
   const handleMeasure = (conform: boolean) => {
@@ -203,50 +183,27 @@ export default function AtelierTech() {
     }
   }
 
-  const handleTechPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const previewUrl = URL.createObjectURL(file)
-      setTechPhotos(prev => [...prev, previewUrl])
-    }
-  }
-
-  const removeTechPhoto = (idx: number) => {
-    setTechPhotos(prev => prev.filter((_, i) => i !== idx))
-  }
-
   const handleGenerateAndSendToChef = async () => {
+    if (!panneConstatee.trim()) return
     setLoadingDevis(true)
-    const anomalies = getSecurityAnomalies()
-    
-    let basePanne = panneConstatee.trim()
-    if (!basePanne || basePanne.length < 2) {
-      basePanne = `Intervention défaut ${dtc} (${symptoms})`
-    }
 
     try {
       const res = await fetch("/api/devis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          dossierId: selectedDossier?.id || null,
-          vehicle: vehicle || "Véhicule Atelier",
-          immat: plate || "AA-123-BB",
-          kilometrage: mileage || "100000",
-          panne_constatee: basePanne,
-          options_travaux: anomalies.length > 0 ? anomalies.join(", ") : "Contrôles conformes"
+          vehicle,
+          immat: plate,
+          kilometrage: mileage,
+          panne_constatee: panneConstatee,
+          options_travaux: `Contrôles : Plaquettes AV ${quickChecks.plaquettesAV}, Disques AV ${quickChecks.disquesAV}, Plaquettes AR ${quickChecks.plaquettesAR}, Disques/Tambours AR ${quickChecks.disquesAR}, Batterie ${quickChecks.batterie}`
         })
       })
 
       const data = await res.json()
-
-      if (data && data.devis) {
-        setDevisTransmis(true)
-      } else {
-        alert("Erreur chiffrage : " + (data?.error || "Réponse invalide"))
-      }
-    } catch (err: any) {
-      alert("Erreur réseau : " + (err?.message || "Connexion impossible"))
+      if (!data.error) setDevisTransmis(true)
+    } catch {
+      alert("Erreur lors de la génération du devis.")
     } finally {
       setLoadingDevis(false)
     }
@@ -262,85 +219,15 @@ export default function AtelierTech() {
     { key: "batterie", label: "Batterie 12V" },
   ]
 
-  if (!selectedDossier) {
-    return (
-      <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-4 md:p-6 gap-5">
-        <header className="flex justify-between items-center p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-cyan-600/20 border border-cyan-500/30 rounded-xl text-cyan-400">
-              <Wrench className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="font-bold text-slate-100 text-base md:text-lg">File d'Attente Atelier</h1>
-              <p className="text-xs text-slate-400">Sélectionnez le véhicule à prendre en charge</p>
-            </div>
-          </div>
-          <button
-            onClick={loadDossiersList}
-            disabled={loadingList}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-xl text-xs text-slate-300 flex items-center gap-1.5 cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingList ? "animate-spin text-cyan-400" : ""}`} /> Actualiser
-          </button>
-        </header>
-
-        {loadingList ? (
-          <div className="text-center py-12 text-slate-500 text-xs flex items-center justify-center gap-2">
-            <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" /> Chargement des véhicules...
-          </div>
-        ) : dossiers.length === 0 ? (
-          <div className="text-center py-12 bg-[#111827]/40 border border-white/5 rounded-2xl text-slate-400 text-xs">
-            Aucun véhicule en attente. Créez une entrée sur l'écran Réception (/ccs).
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {dossiers.map((d) => (
-              <div
-                key={d.id}
-                onClick={() => handleSelectVehicle(d)}
-                className="bg-[#111827]/80 border border-white/10 hover:border-cyan-500/50 p-4 rounded-2xl flex justify-between items-center gap-4 cursor-pointer transition-all duration-200 shadow-lg group hover:bg-slate-900"
-              >
-                <div className="flex flex-col gap-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold px-2.5 py-1 bg-blue-950 border border-blue-700/50 text-blue-400 rounded-lg">
-                      {d.immatriculation}
-                    </span>
-                    <h3 className="font-bold text-slate-200 text-sm truncate group-hover:text-cyan-300">
-                      {d.vin || "Véhicule client"}
-                    </h3>
-                  </div>
-                  <p className="text-xs text-slate-400 line-clamp-1">
-                    Motif : <span className="text-slate-300">{d.constats_technicien || "Non précisé"}</span>
-                  </p>
-                  <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono">
-                    <span>{d.kilometrage ? `${d.kilometrage.toLocaleString("fr-FR")} km` : "Km non renseigné"}</span>
-                    <span>• {d.photos_tour_vehicule?.length || 0} photo(s) CCS</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs shrink-0 group-hover:translate-x-1 transition-transform">
-                  Prendre en charge <ArrowRight className="w-4 h-4" />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
-    )
-  }
-
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-3 md:p-5 gap-4 selection:bg-blue-500/30">
       
+      {/* HEADER */}
       <header className="p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleBackToList}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-white/10 transition cursor-pointer"
-            title="Changer de véhicule"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
+          <div className="p-2.5 bg-cyan-600/20 border border-cyan-500/30 rounded-xl text-cyan-400">
+            <Wrench className="w-5 h-5" />
+          </div>
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
@@ -349,16 +236,16 @@ export default function AtelierTech() {
               <h1 className="font-bold text-slate-100 text-sm md:text-base">{vehicle}</h1>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Compteur : <strong className="text-emerald-400">{mileage} km</strong> • Motif : <span className="text-slate-300">{receptionMotif}</span>
+              Compteur : <strong className="text-emerald-400">{mileage} km</strong> • Motif CCS : <span className="text-slate-300">{receptionMotif}</span>
             </p>
           </div>
         </div>
-        <span className="text-[10px] font-mono uppercase px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded-full font-semibold">
+        <span className="text-[10px] font-mono uppercase px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded-full font-semibold self-end md:self-auto">
           Poste Technicien
         </span>
       </header>
 
-      {/* 1. POINTS DE CONTRÔLE EXPRESS */}
+      {/* 1. CONTRÔLES EXPRESS */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -369,7 +256,7 @@ export default function AtelierTech() {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 text-xs">
           {checkItems.map((item) => {
-            const val = quickChecks[item.key]
+            const val = (quickChecks as any)[item.key]
             return (
               <div key={item.key} className="bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 flex flex-col justify-between gap-2">
                 <span className="text-[11px] text-slate-300 font-medium leading-tight">{item.label}</span>
@@ -395,7 +282,7 @@ export default function AtelierTech() {
         </div>
       </section>
 
-      {/* 2. RECHERCHE DE PANNE & PHOTOS DIAGBOX */}
+      {/* 2. DIAGNOSTIC & PHOTOS DIAGBOX */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -414,9 +301,15 @@ export default function AtelierTech() {
             <button
               type="button"
               onClick={() => techPhotoInputRef.current?.click()}
+              disabled={loadingVision}
               className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-lg text-xs text-cyan-400 font-medium flex items-center gap-1.5 cursor-pointer"
             >
-              <Camera className="w-3.5 h-3.5" /> Photo Diagbox ({techPhotos.length})
+              {loadingVision ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+              ) : (
+                <Camera className="w-3.5 h-3.5" />
+              )}
+              {loadingVision ? "Scan Jack Vision..." : `Photo Diagbox (${techPhotos.length})`}
             </button>
           </div>
         </div>
@@ -458,7 +351,7 @@ export default function AtelierTech() {
         <div className="min-h-[140px] max-h-[220px] overflow-y-auto bg-[#0B0F17]/80 rounded-xl p-3 border border-white/5 flex flex-col gap-2.5 text-xs">
           {messages.length === 0 ? (
             <div className="text-slate-500 text-center my-auto">
-              Lancez le diagnostic ou posez une question technique à Jack.
+              Lancez le diagnostic ou photographiez l'écran de la valise.
             </div>
           ) : (
             messages.map((msg, idx) => (
@@ -471,9 +364,10 @@ export default function AtelierTech() {
               </div>
             ))
           )}
-          {loadingDiag && (
+          {(loadingDiag || loadingVision) && (
             <div className="text-cyan-400 flex items-center gap-1.5 text-[11px]">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Analyse des données...
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> 
+              {loadingVision ? "Jack Vision analyse l'écran OBD..." : "Analyse des données..."}
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -530,7 +424,7 @@ export default function AtelierTech() {
         </div>
       </section>
 
-      {/* 3. CONSTAT & TRANSMISSION AU CHEF */}
+      {/* 3. CONSTAT & TRANSMISSION */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
           <FileText className="w-4 h-4 text-emerald-400" /> 3. Constat Final & Transmission au Chef
@@ -541,7 +435,7 @@ export default function AtelierTech() {
             <CheckCircle2 className="w-8 h-8 text-emerald-400" />
             <h3 className="font-bold text-xs md:text-sm text-emerald-300">Dossier et contrôles transmis au Chef d'Atelier !</h3>
             <p className="text-[11px] text-slate-300">
-              Le chiffrage complet a été calculé et attend validation sur la tour de contrôle.
+              Le chiffrage complet a été calculé par l'IA et attend validation sur la tour de contrôle.
             </p>
             <button
               onClick={() => setDevisTransmis(false)}
@@ -557,7 +451,7 @@ export default function AtelierTech() {
               onChange={(e) => setPanneConstatee(e.target.value)}
               rows={2}
               className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3 text-xs text-slate-200 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40 font-mono"
-              placeholder="Ex: Remplacement amortisseurs avant + coupelles..."
+              placeholder="Ex: Remplacement boîte de vitesses + butée d'embrayage..."
             />
 
             <button
@@ -573,7 +467,7 @@ export default function AtelierTech() {
               {loadingDevis ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Transmission du devis en cours...
+                  Génération de la nomenclature par l'IA...
                 </>
               ) : (
                 <>
