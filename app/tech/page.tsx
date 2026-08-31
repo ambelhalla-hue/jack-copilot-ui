@@ -17,23 +17,21 @@ import {
   Trash2,
   ArrowLeft
 } from "lucide-react"
-import { getAllDossiers } from "@/lib/supabase"
+import { getAllDossiers, type DossierAtelier } from "@/lib/supabase"
 
-interface Dossier {
-  id: string
-  immatriculation: string
-  vin: string
-  kilometrage: number
-  statut: string
-  constats_technicien: string
-  photos_tour_vehicule: string[]
-  created_at: string
+interface MessageTurn {
+  role: "user" | "model"
+  content: string
+}
+
+interface QuickCheckStatus {
+  [key: string]: "bon" | "usure" | "critique"
 }
 
 export default function AtelierTech() {
-  const [dossiers, setDossiers] = useState<Dossier[]>([])
+  const [dossiers, setDossiers] = useState<DossierAtelier[]>([])
   const [loadingList, setLoadingList] = useState(true)
-  const [selectedDossier, setSelectedDossier] = useState<Dossier | null>(null)
+  const [selectedDossier, setSelectedDossier] = useState<DossierAtelier | null>(null)
 
   const [plate, setPlate] = useState("")
   const [vehicle, setVehicle] = useState("")
@@ -42,16 +40,16 @@ export default function AtelierTech() {
 
   const [dtc, setDtc] = useState("P0234")
   const [symptoms, setSymptoms] = useState("")
-  const [messages, setMessages] = useState<{role: string, content: string}[]>([])
+  const [messages, setMessages] = useState<MessageTurn[]>([])
   const [input, setInput] = useState("")
   const [loadingDiag, setLoadingDiag] = useState(false)
   const [voltage, setVoltage] = useState("Attente de mesure...")
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const [isListening, setIsListening] = useState(false)
-  const recognitionRef = useRef<any>(null)
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
 
-  const [quickChecks, setQuickChecks] = useState<Record<string, string>>({
+  const [quickChecks, setQuickChecks] = useState<QuickCheckStatus>({
     pneusAV: "bon",
     pneusAR: "bon",
     plaquettesAV: "bon",
@@ -67,6 +65,7 @@ export default function AtelierTech() {
   const [panneConstatee, setPanneConstatee] = useState("")
   const [loadingDevis, setLoadingDevis] = useState(false)
   const [devisTransmis, setDevisTransmis] = useState(false)
+  const [diagError, setDiagError] = useState<string | null>(null)
 
   const checkLabels: Record<string, string> = {
     pneusAV: "Pneus AV",
@@ -78,7 +77,7 @@ export default function AtelierTech() {
     batterie: "Batterie 12V",
   }
 
-  const getSecurityAnomalies = () => {
+  const getSecurityAnomalies = (): string[] => {
     const list: string[] = []
     Object.entries(quickChecks).forEach(([key, val]) => {
       if (val === "urgent") list.push(`${checkLabels[key]} (URGENT)`)
@@ -87,13 +86,14 @@ export default function AtelierTech() {
     return list
   }
 
-  const loadDossiersList = async () => {
+  const loadDossiersList = async (): Promise<void> => {
     setLoadingList(true)
     try {
       const list = await getAllDossiers()
       setDossiers(list || [])
     } catch (err) {
-      console.error("Erreur chargement Supabase", err)
+      console.error("Erreur chargement Supabase:", err)
+      setDossiers([])
     } finally {
       setLoadingList(false)
     }
@@ -109,14 +109,15 @@ export default function AtelierTech() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition()
+      const SpeechRecognitionAPI = (window as unknown as { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition || 
+                                  (window as unknown as { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition
+      if (SpeechRecognitionAPI) {
+        const recognition = new SpeechRecognitionAPI()
         recognition.continuous = true
         recognition.interimResults = false
         recognition.lang = "fr-FR"
 
-        recognition.onresult = (event: any) => {
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
           let finalTranscript = ""
           for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal) {
@@ -137,7 +138,7 @@ export default function AtelierTech() {
     }
   }, [])
 
-  const toggleListening = () => {
+  const toggleListening = (): void => {
     if (!recognitionRef.current) return
     if (isListening) {
       recognitionRef.current.stop()
@@ -148,7 +149,7 @@ export default function AtelierTech() {
     }
   }
 
-  const handleSelectVehicle = (d: Dossier) => {
+  const handleSelectVehicle = (d: DossierAtelier): void => {
     setSelectedDossier(d)
     setPlate(d.immatriculation)
     setVehicle(d.vin || "Véhicule client")
@@ -157,20 +158,22 @@ export default function AtelierTech() {
     setSymptoms(d.constats_technicien || "")
     setPanneConstatee(d.constats_technicien || "")
     setMessages([])
+    setDiagError(null)
   }
 
-  const handleBackToList = () => {
+  const handleBackToList = (): void => {
     setSelectedDossier(null)
     loadDossiersList()
   }
 
-  const handleSend = async (textToSend: string) => {
+  const handleSend = async (textToSend: string): Promise<void> => {
     if (!textToSend.trim()) return
 
-    const newMessages = [...messages, { role: "user", content: textToSend }]
+    const newMessages: MessageTurn[] = [...messages, { role: "user", content: textToSend }]
     setMessages(newMessages)
     setInput("")
     setLoadingDiag(true)
+    setDiagError(null)
 
     try {
       const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
@@ -184,16 +187,21 @@ export default function AtelierTech() {
         body: JSON.stringify({ messages: apiMessages })
       })
       
-      const data = await res.json()
-      setMessages(prev => [...prev, { role: "assistant", content: data.error ? `Erreur: ${data.error}` : data.response }])
-    } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "Erreur de connexion au serveur de diagnostic." }])
+      const data = await res.json() as Record<string, unknown>
+      const errorMsg = typeof data.error === 'string' ? data.error : undefined
+      const responseMsg = typeof data.response === 'string' ? data.response : undefined
+      
+      setMessages(prev => [...prev, { role: "model", content: errorMsg ? `Erreur: ${errorMsg}` : responseMsg || "Pas de réponse" }])
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : "Erreur inconnue"
+      setMessages(prev => [...prev, { role: "model", content: "Erreur de connexion au serveur de diagnostic." }])
+      setDiagError(errorMsg)
     } finally {
       setLoadingDiag(false)
     }
   }
 
-  const handleMeasure = (conform: boolean) => {
+  const handleMeasure = (conform: boolean): void => {
     if (conform) {
       setVoltage("5.02 V (Conforme)")
       handleSend("Mesure conforme (5V). Faisceau et alimentation validés. Quelle est la suite ?")
@@ -203,7 +211,7 @@ export default function AtelierTech() {
     }
   }
 
-  const handleTechPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTechPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0]
     if (file) {
       const previewUrl = URL.createObjectURL(file)
@@ -211,12 +219,13 @@ export default function AtelierTech() {
     }
   }
 
-  const removeTechPhoto = (idx: number) => {
+  const removeTechPhoto = (idx: number): void => {
     setTechPhotos(prev => prev.filter((_, i) => i !== idx))
   }
 
-  const handleGenerateAndSendToChef = async () => {
+  const handleGenerateAndSendToChef = async (): Promise<void> => {
     setLoadingDevis(true)
+    setDiagError(null)
     const anomalies = getSecurityAnomalies()
     
     let basePanne = panneConstatee.trim()
@@ -238,15 +247,17 @@ export default function AtelierTech() {
         })
       })
 
-      const data = await res.json()
+      const data = await res.json() as Record<string, unknown>
 
       if (data && data.devis) {
         setDevisTransmis(true)
       } else {
-        alert("Erreur chiffrage : " + (data?.error || "Réponse invalide"))
+        const errorMsg = typeof data?.error === 'string' ? data.error : "Réponse invalide"
+        setDiagError(errorMsg)
       }
-    } catch (err: any) {
-      alert("Erreur réseau : " + (err?.message || "Connexion impossible"))
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : "Erreur inconnue"
+      setDiagError(errorMsg)
     } finally {
       setLoadingDevis(false)
     }
