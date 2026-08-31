@@ -24,10 +24,12 @@ export default function ClientInteractiveDevis() {
   const [selectedDossier, setSelectedDossier] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Formule choisie (circulaire ou origine)
   const [optionType, setOptionType] = useState<"origine" | "circulaire">("circulaire")
   const [validated, setValidated] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Accordéons
   const [openPieces, setOpenPieces] = useState(true)
   const [openPeripheriques, setOpenPeripheriques] = useState(false)
   const [openMO, setOpenMO] = useState(false)
@@ -64,16 +66,17 @@ export default function ClientInteractiveDevis() {
   const peripheriques = Array.isArray(devis?.peripheriques) ? devis.peripheriques : []
   const mainOeuvre = Array.isArray(devis?.main_oeuvre) ? devis.main_oeuvre : []
 
+  // Tarification
   const totalHeures = mainOeuvre.reduce((acc: number, curr: any) => acc + (Number(curr.heures) || 0), 0)
   const montantMO = totalHeures > 0 ? totalHeures * 85.00 : 95.00
 
   const basePieces = pieces.reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 85.00) * Number(p.quantite || 1)), 0)
   const baseFournitures = peripheriques.reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 15.00) * Number(p.quantite || 1)), 0)
 
-  const totalHT_Origine = montantMO + basePieces + baseFournitures
+  const totalHT_Origine = montantMO + (basePieces > 0 ? basePieces : 140.00) + (baseFournitures > 0 ? baseFournitures : 15.00)
   const totalTTC_Origine = totalHT_Origine * 1.20
 
-  const totalHT_Circulaire = montantMO + (basePieces * 0.70) + baseFournitures
+  const totalHT_Circulaire = montantMO + ((basePieces > 0 ? basePieces : 140.00) * 0.70) + (baseFournitures > 0 ? baseFournitures : 15.00)
   const totalTTC_Circulaire = totalHT_Circulaire * 1.20
 
   const totalFinalTTC = optionType === "circulaire" ? totalTTC_Circulaire : totalTTC_Origine
@@ -89,12 +92,13 @@ export default function ClientInteractiveDevis() {
       })
       setValidated(true)
     } catch (err: any) {
-      alert("Erreur validation : " + err.message)
+      alert("Erreur lors de la validation : " + err.message)
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  // VUE 1 : SÉLECTEUR DE DOSSIER CLIENT
   if (!selectedDossier) {
     return (
       <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4">
@@ -116,11 +120,11 @@ export default function ClientInteractiveDevis() {
         <section className="flex flex-col gap-3">
           {loading ? (
             <div className="text-center py-12 text-xs text-slate-500 flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" /> Chargement des dossiers...
+              <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" /> Chargement des dossiers clients...
             </div>
           ) : dossiers.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-500 bg-[#111827]/40 border border-white/5 rounded-2xl">
-              Aucun dossier client trouvé.
+              Aucun dossier client trouvé dans la base.
             </div>
           ) : (
             dossiers.map((d) => (
@@ -158,9 +162,9 @@ export default function ClientInteractiveDevis() {
     )
   }
 
+  // VUE 2 : DEVIS DU VÉHICULE SÉLECTIONNÉ
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4 pb-12 selection:bg-emerald-500/30">
-      
       <header className="flex items-center justify-between p-4 bg-[#111827] border border-white/10 rounded-2xl shadow-lg">
         <div className="flex items-center gap-3">
           <button
@@ -241,11 +245,13 @@ export default function ClientInteractiveDevis() {
         </div>
       </section>
 
+      {/* DÉTAIL DÉPLIABLE DES OPÉRATIONS */}
       <section className="space-y-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-1">
           Détail des opérations (Cliquez pour afficher)
         </span>
 
+        {/* 1. Pièces Principales */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -278,6 +284,7 @@ export default function ClientInteractiveDevis() {
           )}
         </div>
 
+        {/* 2. Périphériques */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -310,6 +317,7 @@ export default function ClientInteractiveDevis() {
           )}
         </div>
 
+        {/* 3. Main-d'œuvre */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -370,7 +378,7 @@ export default function ClientInteractiveDevis() {
             </>
           ) : (
             <>
-              Valider cette option ({optionType === "circulaire" ? totalTTC_Circulaire.toFixed(2) : totalTTC_Origine.toFixed(2)} € TTC)
+              Valider cette option ({totalFinalTTC.toFixed(2)} € TTC)
             </>
           )}
         </button>
