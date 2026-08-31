@@ -27,14 +27,13 @@ RÈGLE D'OR : Sois BREF, DIRECT et PRÉCIS (style atelier).
 - Prescris 1 test physique mesurable.
 - Attends le retour.`
 
-    // Formatage des messages pour l'API Gemini
     const contents = messages.map((msg: any) => ({
       role: msg.role === "assistant" ? "model" : "user",
       parts: [{ text: String(msg.content || "") }]
     }))
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -48,27 +47,11 @@ RÈGLE D'OR : Sois BREF, DIRECT et PRÉCIS (style atelier).
     const data = await response.json()
 
     if (!response.ok || data.error) {
-      // Fallback si 2.5 n'est pas dispo
-      const fallbackRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-            contents: contents
-          })
-        }
-      )
-      const fallbackData = await fallbackRes.json()
-      if (fallbackData.error) throw new Error(fallbackData.error.message)
-      const replyFallback = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text || "Bien reçu."
-      return NextResponse.json({ response: replyFallback, text: replyFallback, message: replyFallback })
+      return NextResponse.json({ error: data.error?.message || "Erreur de l'API Google." }, { status: 500 })
     }
 
     const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Bien reçu."
     
-    // On renvoie sous tous les formats pour être sûr que l'interface l'affiche
     return NextResponse.json({ 
       response: reply,
       text: reply,
