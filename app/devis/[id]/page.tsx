@@ -11,13 +11,33 @@ import {
   Car, 
   RefreshCw, 
   Layers, 
-  Wrench, 
   ArrowLeft, 
   Package, 
   Cpu, 
   Info 
 } from "lucide-react"
 import { getAllDossiers, updateDossierStatusAndData } from "@/lib/supabase"
+
+// Fonction de sécurité absolue pour éviter tout crash React
+function toText(val: any, fallback = ""): string {
+  if (val === null || val === undefined) return fallback
+  if (typeof val === "string") return val
+  if (typeof val === "number") return String(val)
+  if (typeof val === "object") {
+    return val.constat_court || val.designation || val.operation || val.label || ""
+  }
+  return String(val)
+}
+
+function parseSafe(devisRaw: any) {
+  if (!devisRaw) return {}
+  if (typeof devisRaw === "object") return devisRaw
+  try {
+    return JSON.parse(devisRaw)
+  } catch {
+    return {}
+  }
+}
 
 export default function DevisClientInteractif() {
   const [dossiers, setDossiers] = useState<any[]>([])
@@ -36,11 +56,11 @@ export default function DevisClientInteractif() {
     try {
       setLoading(true)
       const list = await getAllDossiers()
-      if (list && Array.isArray(list)) {
+      if (Array.isArray(list)) {
         setDossiers(list)
       }
     } catch (err) {
-      console.error("Erreur chargement dossiers", err)
+      console.error("Erreur chargement Supabase:", err)
     } finally {
       setLoading(false)
     }
@@ -51,25 +71,22 @@ export default function DevisClientInteractif() {
   }, [])
 
   const handleSelectVehicle = (d: any) => {
-    try {
-      setSelectedDossier(d)
-      setValidated(d?.statut === "valide_client")
-      setOptionType(d?.choix_client?.includes("Origine") ? "origine" : "circulaire")
-      setOpenPieces(true)
-      setOpenPeripheriques(false)
-      setOpenMO(false)
-    } catch (e) {
-      console.error("Erreur sélection dossier", e)
-    }
+    if (!d) return
+    setSelectedDossier(d)
+    setValidated(d.statut === "valide_client")
+    setOptionType(typeof d.choix_client === "string" && d.choix_client.includes("Origine") ? "origine" : "circulaire")
+    setOpenPieces(true)
+    setOpenPeripheriques(false)
+    setOpenMO(false)
   }
 
-  // Extraction sécurisée des données de devis
-  const devis = selectedDossier?.devis_ia || {}
-  const pieces = Array.isArray(devis?.pieces_principales) ? devis.pieces_principales : []
-  const peripheriques = Array.isArray(devis?.peripheriques) ? devis.peripheriques : []
-  const mainOeuvre = Array.isArray(devis?.main_oeuvre) ? devis.main_oeuvre : []
+  // Extraction blindée contre les crashs
+  const devisObj = parseSafe(selectedDossier?.devis_ia || selectedDossier?.devis_brouillon)
+  const pieces = Array.isArray(devisObj?.pieces_principales) ? devisObj.pieces_principales : []
+  const peripheriques = Array.isArray(devisObj?.peripheriques) ? devisObj.peripheriques : []
+  const mainOeuvre = Array.isArray(devisObj?.main_oeuvre) ? devisObj.main_oeuvre : []
 
-  // Tarification sécurisée anti-NaN
+  // Tarification
   const totalHeures = mainOeuvre.reduce((acc: number, curr: any) => {
     const h = typeof curr?.heures === "number" ? curr.heures : parseFloat(curr?.heures) || 0
     return acc + h
@@ -114,6 +131,7 @@ export default function DevisClientInteractif() {
     }
   }
 
+  // ÉCRAN 1 : LISTE DE SÉLECTION
   if (!selectedDossier) {
     return (
       <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4">
@@ -139,7 +157,7 @@ export default function DevisClientInteractif() {
             </div>
           ) : dossiers.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-500 bg-[#111827]/40 border border-white/5 rounded-2xl">
-              Aucun dossier client trouvé.
+              Aucun dossier client trouvé dans Supabase.
             </div>
           ) : (
             dossiers.map((d) => (
@@ -151,7 +169,7 @@ export default function DevisClientInteractif() {
                 <div className="flex-1 pr-2">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
-                      {d.immatriculation || "SANS-IMMAT"}
+                      {toText(d.immatriculation, "SANS-IMMAT")}
                     </span>
                     <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-mono ${
                       d.statut === "valide_client"
@@ -160,12 +178,12 @@ export default function DevisClientInteractif() {
                         ? "bg-blue-950 text-blue-400 border border-blue-800"
                         : "bg-amber-950 text-amber-400 border border-amber-800"
                     }`}>
-                      {d.statut || "reception"}
+                      {toText(d.statut, "reception")}
                     </span>
                   </div>
-                  <h2 className="font-bold text-sm text-slate-100 mt-1.5">{d.vin || "Véhicule client"}</h2>
+                  <h2 className="font-bold text-sm text-slate-100 mt-1.5">{toText(d.vin, "Véhicule client")}</h2>
                   <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">
-                    Constat : <span className="text-slate-200">{d.constats_technicien || "Intervention atelier"}</span>
+                    Constat : <span className="text-slate-200">{toText(d.constats_technicien, "Intervention atelier")}</span>
                   </p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-emerald-400 transition transform group-hover:translate-x-1" />
@@ -177,6 +195,7 @@ export default function DevisClientInteractif() {
     )
   }
 
+  // ÉCRAN 2 : DEVIS DÉTAILLÉ
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4 pb-12 selection:bg-emerald-500/30">
       
@@ -192,9 +211,9 @@ export default function DevisClientInteractif() {
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
-                {selectedDossier.immatriculation || "---"}
+                {toText(selectedDossier.immatriculation, "---")}
               </span>
-              <h1 className="font-bold text-sm text-slate-100">{selectedDossier.vin || "Véhicule client"}</h1>
+              <h1 className="font-bold text-sm text-slate-100">{toText(selectedDossier.vin, "Véhicule client")}</h1>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
               Compteur : <strong className="text-emerald-400">{selectedDossier.kilometrage ? Number(selectedDossier.kilometrage).toLocaleString("fr-FR") : "---"} km</strong>
@@ -207,8 +226,8 @@ export default function DevisClientInteractif() {
         <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1">
           <Info className="w-3 h-3 text-emerald-400" /> Rapport de Diagnostic & Contrôles
         </span>
-        <p className="text-xs text-slate-200 leading-relaxed font-medium bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
-          {selectedDossier.constats_technicien || "Contrôle technique sur pont et remise en état préconisée."}
+        <p className="text-xs text-slate-200 leading-relaxed font-medium bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 whitespace-pre-wrap">
+          {toText(selectedDossier.constats_technicien, "Contrôle technique sur pont et remise en état préconisée.")}
         </p>
       </section>
 
@@ -269,6 +288,7 @@ export default function DevisClientInteractif() {
           Détail des opérations (Cliquez pour afficher)
         </span>
 
+        {/* 1. Pièces Principales */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -290,8 +310,8 @@ export default function DevisClientInteractif() {
                 pieces.map((p: any, i: number) => (
                   <div key={i} className="flex justify-between items-start bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
                     <div>
-                      <span className="text-slate-200 font-medium block leading-tight">{p?.designation || "Pièce"}</span>
-                      <span className="text-[10px] font-mono text-slate-500">Réf : {p?.ref || "OEM-STD"}</span>
+                      <span className="text-slate-200 font-medium block leading-tight">{toText(p?.designation, "Pièce de rechange")}</span>
+                      <span className="text-[10px] font-mono text-slate-500">Réf : {toText(p?.ref, "OEM-STD")}</span>
                     </div>
                     <span className="font-mono text-cyan-400 font-bold shrink-0 ml-2">x{p?.quantite || 1}</span>
                   </div>
@@ -301,6 +321,7 @@ export default function DevisClientInteractif() {
           )}
         </div>
 
+        {/* 2. Périphériques */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -324,7 +345,7 @@ export default function DevisClientInteractif() {
               ) : (
                 peripheriques.map((p: any, i: number) => (
                   <div key={i} className="flex justify-between items-center bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
-                    <span className="text-slate-300">{p?.designation || "Fournitures"}</span>
+                    <span className="text-slate-300">{toText(p?.designation, "Fournitures atelier")}</span>
                     <span className="font-mono text-amber-400 font-bold">x{p?.quantite || 1}</span>
                   </div>
                 ))
@@ -333,6 +354,7 @@ export default function DevisClientInteractif() {
           )}
         </div>
 
+        {/* 3. Main-d'œuvre */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -356,7 +378,7 @@ export default function DevisClientInteractif() {
               ) : (
                 mainOeuvre.map((m: any, i: number) => (
                   <div key={i} className="flex justify-between items-center bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 text-slate-300">
-                    <span>{m?.operation || "Opération atelier"}</span>
+                    <span>{toText(m?.operation, "Opération atelier")}</span>
                     <span className="font-mono text-emerald-400 font-bold">{m?.heures || 0} h</span>
                   </div>
                 ))
