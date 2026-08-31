@@ -6,7 +6,7 @@ export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: "Clé GEMINI_API_KEY manquante." }, { status: 500 })
+      return NextResponse.json({ error: "Clé GEMINI_API_KEY non configurée dans Vercel." }, { status: 500 })
     }
 
     const body = await req.json()
@@ -37,8 +37,9 @@ ATTENDU : [Valeur seuil / signal cible]`
 Notes : ${userNotes || "Analyse requise"}
 Analyse cette capture d'écran et effectue le tri des défauts multiples.`
 
+    // APPEL MODÈLE OFFICIEL REQUIS PAR GOOGLE : gemini-3.6-flash
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -68,13 +69,13 @@ Analyse cette capture d'écran et effectue le tri des défauts multiples.`
 
     const data = await response.json()
     if (!response.ok || data.error) {
-      return NextResponse.json({ error: data.error?.message || "Erreur Google API" }, { status: 500 })
+      return NextResponse.json({ error: data.error?.message || "Erreur de l'API Google." }, { status: 500 })
     }
 
     const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Diagnostic impossible."
     return NextResponse.json({ result: resultText })
 
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Erreur serveur" }, { status: 500 })
+    return NextResponse.json({ error: error?.message || "Erreur serveur Vercel." }, { status: 500 })
   }
 }
