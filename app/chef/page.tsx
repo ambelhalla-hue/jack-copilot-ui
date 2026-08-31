@@ -41,6 +41,7 @@ export default function DashboardChefAtelier() {
 
   const [alertDevisPret, setAlertDevisPret] = useState<any | null>(null)
   const [alertClientValide, setAlertClientValide] = useState<any | null>(null)
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([])
 
   const [mainParts, setMainParts] = useState<PartItem[]>([])
   const [peripherals, setPeripherals] = useState<PartItem[]>([])
@@ -55,45 +56,18 @@ export default function DashboardChefAtelier() {
   const [isTransmitting, setIsTransmitting] = useState(false)
   const [isTransmitted, setIsTransmitted] = useState(false)
 
-  // Synchronisation dynamique du chiffrage selon le dossier sélectionné
   useEffect(() => {
     if (selectedDossier) {
       const devis = selectedDossier.devis_ia
 
-      if (devis) {
-        if (Array.isArray(devis.pieces_principales) && devis.pieces_principales.length > 0) {
-          setMainParts(devis.pieces_principales)
-        } else {
-          setMainParts([
-            { id: "1", designation: `Intervention : ${selectedDossier.constats_technicien || "Pièces à définir"}`, ref: "OE / Adaptable", quantite: 1 }
-          ])
-        }
-
-        if (Array.isArray(devis.peripheriques) && devis.peripheriques.length > 0) {
-          setPeripherals(devis.peripheriques)
-        } else {
-          setPeripherals([
-            { id: "1", designation: "Consommables & petites fournitures d'atelier", ref: "Fournitures", quantite: 1 }
-          ])
-        }
-
-        if (Array.isArray(devis.main_oeuvre) && devis.main_oeuvre.length > 0) {
-          setLabor(devis.main_oeuvre)
-        } else {
-          setLabor([
-            { id: "1", operation: `Main-d'œuvre : ${selectedDossier.constats_technicien || "Remplacement"}`, heures: 1.5 }
-          ])
-        }
+      if (devis && typeof devis === "object") {
+        setMainParts(Array.isArray(devis.pieces_principales) ? devis.pieces_principales : [])
+        setPeripherals(Array.isArray(devis.peripheriques) ? devis.peripheriques : [])
+        setLabor(Array.isArray(devis.main_oeuvre) ? devis.main_oeuvre : [])
       } else {
-        setMainParts([
-          { id: "1", designation: selectedDossier.constats_technicien || "Remplacement pièces préconisées", ref: "OE / Adaptable", quantite: 1 }
-        ])
-        setPeripherals([
-          { id: "1", designation: "Petites fournitures & recyclage", ref: "Norme", quantite: 1 }
-        ])
-        setLabor([
-          { id: "1", operation: "Main-d'œuvre intervention atelier", heures: 1.0 }
-        ])
+        setMainParts([])
+        setPeripherals([])
+        setLabor([])
       }
 
       setCheckedBlocks({ mainParts: false, peripherals: false, labor: false })
@@ -107,12 +81,15 @@ export default function DashboardChefAtelier() {
       if (list && list.length > 0) {
         setDossiers(list)
 
-        const devisAValider = list.find(d => d.statut === "devis_genere")
+        // Alerte devis : déclenchée uniquement si non acquittée et non sélectionnée
+        const devisAValider = list.find(d => d.statut === "devis_genere" && !dismissedAlerts.includes(`devis_${d.id}`))
         if (devisAValider && (!selectedDossier || selectedDossier.id !== devisAValider.id)) {
           setAlertDevisPret(devisAValider)
+        } else {
+          setAlertDevisPret(null)
         }
 
-        const accordClient = list.find(d => d.statut === "valide_client")
+        const accordClient = list.find(d => d.statut === "valide_client" && !dismissedAlerts.includes(`client_${d.id}`))
         if (accordClient) {
           setAlertClientValide(accordClient)
         }
@@ -135,7 +112,17 @@ export default function DashboardChefAtelier() {
     refreshDossiers()
     const interval = setInterval(refreshDossiers, 5000)
     return () => clearInterval(interval)
-  }, [])
+  }, [dismissedAlerts, selectedDossier])
+
+  const dismissDevis = (id: string) => {
+    setDismissedAlerts(prev => [...prev, `devis_${id}`])
+    setAlertDevisPret(null)
+  }
+
+  const dismissClient = (id: string) => {
+    setDismissedAlerts(prev => [...prev, `client_${id}`])
+    setAlertClientValide(null)
+  }
 
   const totalHeures = labor.reduce((acc, curr) => acc + (Number(curr.heures) || 0), 0)
 
@@ -208,24 +195,24 @@ export default function DashboardChefAtelier() {
           <div className="flex-1">
             <h4 className="font-bold text-sm text-amber-200">Nouveau devis technicien à vérifier !</h4>
             <p className="text-xs text-amber-300/90 mt-0.5">
-              Véhicule <strong className="text-white">{alertDevisPret.immatriculation}</strong> — Proposition transmise depuis l'atelier.
+              Véhicule <strong className="text-white">{alertDevisPret.immatriculation}</strong> — Diagnostic atelier terminé.
             </p>
             <div className="flex gap-2 mt-2.5">
               <button
                 onClick={() => {
                   setSelectedDossier(alertDevisPret)
-                  setAlertDevisPret(null)
+                  dismissDevis(alertDevisPret.id)
                 }}
                 className="bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs px-3 py-1.5 rounded-lg transition cursor-pointer"
               >
                 Vérifier le chiffrage
               </button>
-              <button onClick={() => setAlertDevisPret(null)} className="text-xs text-amber-400/80 hover:text-white px-2 py-1.5">
+              <button onClick={() => dismissDevis(alertDevisPret.id)} className="text-xs text-amber-400/80 hover:text-white px-2 py-1.5">
                 Ignorer
               </button>
             </div>
           </div>
-          <button onClick={() => setAlertDevisPret(null)} className="text-amber-400/60 hover:text-white">
+          <button onClick={() => dismissDevis(alertDevisPret.id)} className="text-amber-400/60 hover:text-white">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -244,18 +231,18 @@ export default function DashboardChefAtelier() {
               <button
                 onClick={() => {
                   setSelectedDossier(alertClientValide)
-                  setAlertClientValide(null)
+                  dismissClient(alertClientValide.id)
                 }}
                 className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs px-3 py-1.5 rounded-lg transition cursor-pointer"
               >
                 Voir la commande
               </button>
-              <button onClick={() => setAlertClientValide(null)} className="text-xs text-emerald-400/80 hover:text-white px-2 py-1.5">
+              <button onClick={() => dismissClient(alertClientValide.id)} className="text-xs text-emerald-400/80 hover:text-white px-2 py-1.5">
                 Fermer
               </button>
             </div>
           </div>
-          <button onClick={() => setAlertClientValide(null)} className="text-emerald-400/60 hover:text-white">
+          <button onClick={() => dismissClient(alertClientValide.id)} className="text-emerald-400/60 hover:text-white">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -280,13 +267,16 @@ export default function DashboardChefAtelier() {
         </button>
       </header>
 
-      {/* SÉLECTEUR DE VÉHICULE (CLIC POUR CHANGER DE DOSSIER) */}
+      {/* SÉLECTEUR DE VÉHICULE */}
       {dossiers.length > 0 && (
         <section className="flex gap-2 overflow-x-auto pb-1">
           {dossiers.map((d) => (
             <button
               key={d.id}
-              onClick={() => setSelectedDossier(d)}
+              onClick={() => {
+                setSelectedDossier(d)
+                dismissDevis(d.id)
+              }}
               className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold whitespace-nowrap transition cursor-pointer border flex items-center gap-2 ${
                 selectedDossier?.id === d.id
                   ? "bg-blue-600 text-white border-blue-400 shadow-lg"
@@ -320,7 +310,7 @@ export default function DashboardChefAtelier() {
                 <h2 className="font-bold text-slate-100 text-sm md:text-base">{selectedDossier.vin}</h2>
               </div>
               <span className="text-xs font-mono text-emerald-400 font-semibold">
-                {selectedDossier.kilometrage ? `${selectedDossier.kilometrage.toLocaleString("fr-FR")} km` : "--- km"}
+                {selectedDossier.kilometrage ? `${Number(selectedDossier.kilometrage).toLocaleString("fr-FR")} km` : "--- km"}
               </span>
             </div>
 
@@ -364,7 +354,7 @@ export default function DashboardChefAtelier() {
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <PackageCheck className={`w-4 h-4 ${checkedBlocks.mainParts ? "text-emerald-400" : "text-blue-400"}`} />
-                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 1 : Pièces Principales</h3>
+                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 1 : Pièces Principales ({mainParts.length})</h3>
                   </div>
                   <button
                     type="button"
@@ -419,14 +409,14 @@ export default function DashboardChefAtelier() {
                 </div>
               </section>
 
-              {/* BLOC 2 : PÉRIPHÉRIQUES ET FLUIDES */}
+              {/* BLOC 2 : PÉRIPHÉRIQUES ET FOURNITURES */}
               <section className={`p-4 rounded-2xl border transition-all duration-200 flex flex-col gap-3 ${
                 checkedBlocks.peripherals ? "bg-emerald-950/15 border-emerald-500/60" : "bg-[#111827]/70 border-white/10"
               }`}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <Droplet className={`w-4 h-4 ${checkedBlocks.peripherals ? "text-emerald-400" : "text-amber-400"}`} />
-                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 2 : Périphériques & Fournitures</h3>
+                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 2 : Périphériques & Fournitures ({peripherals.length})</h3>
                   </div>
                   <button
                     type="button"
@@ -488,7 +478,7 @@ export default function DashboardChefAtelier() {
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <Clock className={`w-4 h-4 ${checkedBlocks.labor ? "text-emerald-400" : "text-cyan-400"}`} />
-                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 3 : Main-d'Œuvre & Barèmes</h3>
+                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 3 : Main-d'Œuvre & Barèmes ({labor.length})</h3>
                   </div>
                   <button
                     type="button"
@@ -544,7 +534,7 @@ export default function DashboardChefAtelier() {
                 </div>
               </section>
 
-              {/* TRANSMISSION AU CLIENT */}
+              {/* TRANSMISSION */}
               <button
                 onClick={handleTransmitToClient}
                 disabled={!allValidated || isTransmitting}
