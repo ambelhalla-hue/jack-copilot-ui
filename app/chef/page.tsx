@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { 
   ShieldCheck, 
   Clock, 
@@ -56,24 +56,34 @@ export default function DashboardChefAtelier() {
   const [isTransmitting, setIsTransmitting] = useState(false)
   const [isTransmitted, setIsTransmitted] = useState(false)
 
+  // Référence pour mémoriser l'ID du dossier actuellement affiché
+  const currentDossierIdRef = useRef<string | null>(null)
+
+  // Synchronisation des lignes de devis uniquement lors d'un vrai changement de dossier
   useEffect(() => {
     if (selectedDossier) {
-      const devis = selectedDossier.devis_ia
+      const isNewDossier = currentDossierIdRef.current !== selectedDossier.id
+      currentDossierIdRef.current = selectedDossier.id
 
-      if (devis && typeof devis === "object") {
-        setMainParts(Array.isArray(devis.pieces_principales) ? devis.pieces_principales : [])
-        setPeripherals(Array.isArray(devis.peripheriques) ? devis.peripheriques : [])
-        setLabor(Array.isArray(devis.main_oeuvre) ? devis.main_oeuvre : [])
-      } else {
-        setMainParts([])
-        setPeripherals([])
-        setLabor([])
+      if (isNewDossier) {
+        const devis = selectedDossier.devis_ia
+
+        if (devis && typeof devis === "object") {
+          setMainParts(Array.isArray(devis.pieces_principales) ? devis.pieces_principales : [])
+          setPeripherals(Array.isArray(devis.peripheriques) ? devis.peripheriques : [])
+          setLabor(Array.isArray(devis.main_oeuvre) ? devis.main_oeuvre : [])
+        } else {
+          setMainParts([])
+          setPeripherals([])
+          setLabor([])
+        }
+
+        // Remise à zéro des coches uniquement lors du changement de voiture
+        setCheckedBlocks({ mainParts: false, peripherals: false, labor: false })
+        setIsTransmitted(selectedDossier.statut === "valide_chef" || selectedDossier.statut === "valide_client")
       }
-
-      setCheckedBlocks({ mainParts: false, peripherals: false, labor: false })
-      setIsTransmitted(selectedDossier.statut === "valide_chef" || selectedDossier.statut === "valide_client")
     }
-  }, [selectedDossier])
+  }, [selectedDossier?.id])
 
   const refreshDossiers = async () => {
     try {
@@ -81,7 +91,6 @@ export default function DashboardChefAtelier() {
       if (list && list.length > 0) {
         setDossiers(list)
 
-        // Alerte devis : déclenchée uniquement si non acquittée et non sélectionnée
         const devisAValider = list.find(d => d.statut === "devis_genere" && !dismissedAlerts.includes(`devis_${d.id}`))
         if (devisAValider && (!selectedDossier || selectedDossier.id !== devisAValider.id)) {
           setAlertDevisPret(devisAValider)
@@ -96,9 +105,6 @@ export default function DashboardChefAtelier() {
 
         if (!selectedDossier) {
           setSelectedDossier(devisAValider || list[0])
-        } else {
-          const updatedCurrent = list.find(d => d.id === selectedDossier.id)
-          if (updatedCurrent) setSelectedDossier(updatedCurrent)
         }
       }
     } catch (err) {
@@ -112,7 +118,7 @@ export default function DashboardChefAtelier() {
     refreshDossiers()
     const interval = setInterval(refreshDossiers, 5000)
     return () => clearInterval(interval)
-  }, [dismissedAlerts, selectedDossier])
+  }, [dismissedAlerts])
 
   const dismissDevis = (id: string) => {
     setDismissedAlerts(prev => [...prev, `devis_${id}`])
@@ -126,6 +132,7 @@ export default function DashboardChefAtelier() {
 
   const totalHeures = labor.reduce((acc, curr) => acc + (Number(curr.heures) || 0), 0)
 
+  // Bascule stable d'un bloc sans risque d'écrasement
   const toggleBlock = (blockKey: "mainParts" | "peripherals" | "labor") => {
     setCheckedBlocks(prev => ({ ...prev, [blockKey]: !prev[blockKey] }))
   }
@@ -200,6 +207,7 @@ export default function DashboardChefAtelier() {
             <div className="flex gap-2 mt-2.5">
               <button
                 onClick={() => {
+                  currentDossierIdRef.current = null
                   setSelectedDossier(alertDevisPret)
                   dismissDevis(alertDevisPret.id)
                 }}
@@ -230,6 +238,7 @@ export default function DashboardChefAtelier() {
             <div className="flex gap-2 mt-2.5">
               <button
                 onClick={() => {
+                  currentDossierIdRef.current = null
                   setSelectedDossier(alertClientValide)
                   dismissClient(alertClientValide.id)
                 }}
@@ -274,7 +283,10 @@ export default function DashboardChefAtelier() {
             <button
               key={d.id}
               onClick={() => {
-                setSelectedDossier(d)
+                if (selectedDossier?.id !== d.id) {
+                  currentDossierIdRef.current = null
+                  setSelectedDossier(d)
+                }
                 dismissDevis(d.id)
               }}
               className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold whitespace-nowrap transition cursor-pointer border flex items-center gap-2 ${
