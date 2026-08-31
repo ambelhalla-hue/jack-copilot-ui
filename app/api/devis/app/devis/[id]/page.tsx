@@ -9,7 +9,6 @@ import {
   ChevronRight, 
   ChevronDown,
   Car, 
-  FileText, 
   RefreshCw,
   Layers,
   Wrench,
@@ -30,7 +29,7 @@ export default function ClientInteractiveDevis() {
   const [validated, setValidated] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // États pour ouvrir / fermer les sections détaillées au clic
+  // États pour ouvrir / fermer les accordéons
   const [openPieces, setOpenPieces] = useState(true)
   const [openPeripheriques, setOpenPeripheriques] = useState(false)
   const [openMO, setOpenMO] = useState(false)
@@ -40,13 +39,7 @@ export default function ClientInteractiveDevis() {
       setLoading(true)
       const list = await getAllDossiers()
       if (list && Array.isArray(list)) {
-        // Affiche les dossiers prêts ou validés
-        const clientList = list.filter((d: any) => 
-          d.statut === "valide_chef" || 
-          d.statut === "valide_client" || 
-          d.statut === "devis_genere"
-        )
-        setDossiers(clientList.length > 0 ? clientList : list)
+        setDossiers(list)
       }
     } catch (err) {
       console.error(err)
@@ -73,12 +66,12 @@ export default function ClientInteractiveDevis() {
   const peripheriques = Array.isArray(devis?.peripheriques) ? devis.peripheriques : []
   const mainOeuvre = Array.isArray(devis?.main_oeuvre) ? devis.main_oeuvre : []
 
-  // Tarification
+  // Tarification dynamique
   const tauxHoraire = 85.00
   const totalHeures = mainOeuvre.reduce((acc: number, curr: any) => acc + (Number(curr.heures) || 0), 0)
-  const montantMO = totalHeures > 0 ? totalHeures * tauxHoraire : 95.00
+  const montantMO = totalHeures > 0 ? totalHeures * tauxHoraire : (devis?.main_oeuvre_ht || 95.00)
 
-  const basePieces = (pieces.length > 0 ? pieces.length * 85.00 : 120.00) + (peripheriques.length * 15.00)
+  const basePieces = (pieces.length > 0 ? pieces.length * 85.00 : 140.00) + (peripheriques.length * 15.00)
   const prixPieces = optionType === "circulaire" ? basePieces * 0.70 : basePieces
   const totalHT = montantMO + prixPieces
   const totalTTC = totalHT * 1.20
@@ -100,51 +93,58 @@ export default function ClientInteractiveDevis() {
     }
   }
 
-  // VUE 1 : INTERFACE DE CHOIX DU VÉHICULE
+  // VUE 1 : CHOIX DU DOSSIER CLIENT (POUR TOUS LES CLIENTS)
   if (!selectedDossier) {
     return (
       <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4">
         <header className="p-4 bg-[#111827]/80 border border-white/10 rounded-2xl shadow-xl flex justify-between items-center">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-blue-600/20 border border-blue-500/30 rounded-xl text-blue-400">
+            <div className="p-2 bg-emerald-600/20 border border-emerald-500/30 rounded-xl text-emerald-400">
               <Car className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-bold text-base text-slate-100">Espace Devis Client</h1>
-              <p className="text-[11px] text-slate-400">Sélectionnez votre véhicule pour consulter le détail</p>
+              <h1 className="font-bold text-base text-slate-100">Vue Client Interactif (SMS)</h1>
+              <p className="text-[11px] text-slate-400">Sélectionnez le dossier à prévisualiser</p>
             </div>
           </div>
-          <button onClick={loadClientDossiers} className="p-2 text-slate-400 hover:text-white">
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-400" : ""}`} />
+          <button onClick={loadClientDossiers} className="p-2 text-slate-400 hover:text-white cursor-pointer">
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-400" : ""}`} />
           </button>
         </header>
 
         <section className="flex flex-col gap-3">
           {loading ? (
             <div className="text-center py-12 text-xs text-slate-500 flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin text-blue-400" /> Chargement de vos devis...
+              <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" /> Chargement des dossiers clients...
             </div>
           ) : dossiers.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-500 bg-[#111827]/40 border border-white/5 rounded-2xl">
-              Aucun devis en attente de consultation.
+              Aucun dossier client trouvé dans la base de données.
             </div>
           ) : (
             dossiers.map((d) => (
               <div
                 key={d.id}
                 onClick={() => handleSelectVehicle(d)}
-                className="bg-[#111827]/80 hover:bg-[#111827] border border-white/10 hover:border-blue-500/50 rounded-2xl p-4 flex justify-between items-center shadow-lg transition cursor-pointer group"
+                className="bg-[#111827]/80 hover:bg-[#111827] border border-white/10 hover:border-emerald-500/50 rounded-2xl p-4 flex justify-between items-center shadow-lg transition cursor-pointer group"
               >
-                <div>
-                  <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
-                    {d.immatriculation}
-                  </span>
+                <div className="flex-1 pr-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
+                      {d.immatriculation}
+                    </span>
+                    <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-mono ${
+                      d.statut === "valide_client" ? "bg-emerald-950 text-emerald-400 border border-emerald-800" : "bg-slate-800 text-slate-400"
+                    }`}>
+                      {d.statut || "en attente"}
+                    </span>
+                  </div>
                   <h2 className="font-bold text-sm text-slate-100 mt-1.5">{d.vin || "Véhicule client"}</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Bilan : <span className="text-slate-200">{d.constats_technicien || "Entretien & réparations"}</span>
+                  <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">
+                    Constat : <span className="text-slate-200">{d.constats_technicien || "Intervention atelier"}</span>
                   </p>
                 </div>
-                <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-blue-400 transition transform group-hover:translate-x-1" />
+                <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-emerald-400 transition transform group-hover:translate-x-1" />
               </div>
             ))
           )}
@@ -153,17 +153,17 @@ export default function ClientInteractiveDevis() {
     )
   }
 
-  // VUE 2 : DEVIS DÉTAILLÉ ET CLIQUABLE DU VÉHICULE
+  // VUE 2 : CE QUE LE CLIENT REÇOIT SUR SON MOBILE POUR LE DOSSIER CHOISI
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4 pb-12 selection:bg-emerald-500/30">
       
-      {/* HEADER AVEC RETOUR */}
+      {/* HEADER AVEC BOUTON DE RETOUR AUX AUTRES DOSSIERS */}
       <header className="flex items-center justify-between p-4 bg-[#111827] border border-white/10 rounded-2xl shadow-lg">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSelectedDossier(null)}
             className="p-2 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-xl text-slate-300 hover:text-white transition cursor-pointer"
-            title="Changer de véhicule"
+            title="Changer de dossier"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -181,62 +181,68 @@ export default function ClientInteractiveDevis() {
         </div>
       </header>
 
-      {/* BILAN CONSTAT MÉCANIQUE */}
+      {/* RAPPORT DE DIAGNOSTIC */}
       <section className="bg-[#111827]/80 border border-white/10 rounded-2xl p-4 space-y-1.5 shadow-md">
         <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1">
-          <Info className="w-3 h-3 text-blue-400" /> Bilan des contrôles d'atelier
+          <Info className="w-3 h-3 text-emerald-400" /> Rapport de Diagnostic & Contrôles
         </span>
         <p className="text-xs text-slate-200 leading-relaxed font-medium bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
-          {selectedDossier.constats_technicien || "Intervention mécanique et contrôles périodiques de sécurité."}
+          {selectedDossier.constats_technicien || "Contrôle technique sur pont et remise en état préconisée."}
         </p>
       </section>
 
-      {/* FORMULE DE PIÈCES (ORIGINE VS CIRCULAIRE) */}
+      {/* CHOIX DE LA FORMULE */}
       <section className="space-y-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-1">
-          Choix de la formule de réparation
+          Choisissez votre option de réparation :
         </span>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div
-            onClick={() => !validated && setOptionType("origine")}
-            className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-2 ${
-              optionType === "origine"
-                ? "bg-blue-950/40 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.2)]"
-                : "bg-[#111827]/60 border-white/5 opacity-70"
-            }`}
-          >
-            <div className="flex justify-between items-start">
-              <ShieldCheck className={`w-4 h-4 ${optionType === "origine" ? "text-blue-400" : "text-slate-500"}`} />
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">Garantie 2 ans</span>
-            </div>
-            <div>
-              <h3 className="font-bold text-xs text-slate-100">Origine Constructeur</h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">Pièces certifiées neuves</p>
-            </div>
-          </div>
-
+        <div className="flex flex-col gap-2.5">
+          {/* Économie Circulaire */}
           <div
             onClick={() => !validated && setOptionType("circulaire")}
-            className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+            className={`p-4 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
               optionType === "circulaire"
-                ? "bg-emerald-950/40 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                ? "bg-emerald-950/40 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.25)]"
                 : "bg-[#111827]/60 border-white/5 opacity-70"
             }`}
           >
-            <div className="flex justify-between items-start">
-              <Sparkles className={`w-4 h-4 ${optionType === "circulaire" ? "text-emerald-400" : "text-slate-500"}`} />
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">-30% Pièces</span>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/20 rounded-xl text-emerald-400">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-xs text-slate-100">Économie Circulaire</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Éco-responsable & Économique (PIEC)</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-xs text-slate-100">Économie Circulaire</h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">Reconditionné certifié PIEC</p>
+            <span className="font-mono text-sm font-bold text-emerald-400">{(totalTTC * 0.85).toFixed(2)} € TTC</span>
+          </div>
+
+          {/* Pièces Neuves d'Origine */}
+          <div
+            onClick={() => !validated && setOptionType("origine")}
+            className={`p-4 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
+              optionType === "origine"
+                ? "bg-blue-950/40 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.25)]"
+                : "bg-[#111827]/60 border-white/5 opacity-70"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-500/20 rounded-xl text-blue-400">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-xs text-slate-100">Pièces Neuves d'Origine</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Garantie Constructeur</p>
+              </div>
             </div>
+            <span className="font-mono text-sm font-bold text-blue-400">{totalTTC.toFixed(2)} € TTC</span>
           </div>
         </div>
       </section>
 
-      {/* DÉTAIL DÉPLIABLE DU DEVIS (ACCORDÉONS CLIQUABLES) */}
+      {/* DÉTAIL DÉPLIABLE DU DEVIS */}
       <section className="space-y-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-1">
           Détail des opérations (Cliquez pour afficher)
@@ -251,7 +257,7 @@ export default function ClientInteractiveDevis() {
           >
             <div className="flex items-center gap-2">
               <Package className="w-4 h-4 text-cyan-400" />
-              <span>Pièces Principales de Rechange ({pieces.length})</span>
+              <span>Pièces Principales ({pieces.length})</span>
             </div>
             {openPieces ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
           </button>
@@ -259,7 +265,7 @@ export default function ClientInteractiveDevis() {
           {openPieces && (
             <div className="p-3 pt-0 space-y-2 text-xs border-t border-white/5">
               {pieces.length === 0 ? (
-                <p className="text-slate-500 text-[11px] italic py-1">Inclus selon diagnostic de l'intervention.</p>
+                <p className="text-slate-500 text-[11px] italic py-1">Inclus selon diagnostic atelier.</p>
               ) : (
                 pieces.map((p: any, i: number) => (
                   <div key={i} className="flex justify-between items-start bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
@@ -293,7 +299,7 @@ export default function ClientInteractiveDevis() {
             <div className="p-3 pt-0 space-y-2 text-xs border-t border-white/5">
               {peripheriques.length === 0 ? (
                 <div className="bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 flex justify-between items-center">
-                  <span className="text-slate-300">Fournitures d'atelier, nettoyant dégraissant & recyclage</span>
+                  <span className="text-slate-300">Fournitures d'atelier & recyclage</span>
                   <span className="font-mono text-amber-400 font-bold">x1</span>
                 </div>
               ) : (
@@ -326,7 +332,7 @@ export default function ClientInteractiveDevis() {
             <div className="p-3 pt-0 space-y-2 text-xs border-t border-white/5">
               {mainOeuvre.length === 0 ? (
                 <div className="bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 flex justify-between items-center">
-                  <span className="text-slate-300">Intervention mécanique et essais routiers</span>
+                  <span className="text-slate-300">Intervention mécanique et essais</span>
                   <span className="font-mono text-emerald-400 font-bold">1.20 h</span>
                 </div>
               ) : (
@@ -342,48 +348,40 @@ export default function ClientInteractiveDevis() {
         </div>
       </section>
 
-      {/* DISPONIBILITÉ */}
-      <div className="flex items-center gap-2 p-3 bg-slate-900/90 border border-white/5 rounded-xl text-xs text-slate-300">
-        <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-        <span>Restitution estimée : <strong className="text-white">Aujourd'hui à 17h30</strong></span>
+      {/* DÉLAI DE RESTITUTION */}
+      <div className="flex items-center justify-between p-3.5 bg-slate-900/90 border border-white/5 rounded-2xl text-xs">
+        <div className="flex items-center gap-2 text-slate-300">
+          <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>Restitution estimée :</span>
+        </div>
+        <span className="px-2.5 py-1 bg-cyan-950 border border-cyan-800 text-cyan-300 font-mono font-bold rounded-lg uppercase">
+          Aujourd'hui à 18h00
+        </span>
       </div>
 
-      {/* BLOC TOTAL & ACCORD CLIENT */}
-      <section className="bg-gradient-to-br from-[#111827] to-black border border-white/10 rounded-2xl p-4 space-y-3 shadow-2xl">
-        <div className="flex justify-between items-end border-b border-white/10 pb-3">
-          <div>
-            <span className="text-[10px] uppercase font-mono text-slate-400 block">Montant Estimé Global</span>
-            <span className="text-xs text-slate-400 font-mono">TVA 20% incluse</span>
-          </div>
-          <div className="text-right">
-            <span className="text-2xl font-bold font-mono text-emerald-400">{totalTTC.toFixed(2)} €</span>
-            <span className="text-[11px] font-mono text-slate-400 block">({totalHT.toFixed(2)} € HT)</span>
-          </div>
+      {/* BOUTON VALIDATION */}
+      {validated ? (
+        <div className="p-4 bg-emerald-950/40 border border-emerald-500/50 rounded-2xl text-center flex items-center justify-center gap-2 text-emerald-300 text-xs font-bold">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Option validée — Travaux autorisés !
         </div>
-
-        {validated ? (
-          <div className="p-3 bg-emerald-950/40 border border-emerald-500/50 rounded-xl text-center flex items-center justify-center gap-2 text-emerald-300 text-xs font-bold">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Accord enregistré — Pièces réservées et travaux autorisés !
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={handleValidateClient}
-            disabled={isSubmitting}
-            className="w-full py-4 px-6 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.35)] flex items-center justify-center gap-2 cursor-pointer transition-all"
-          >
-            {isSubmitting ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" /> Transmission de l'accord...
-              </>
-            ) : (
-              <>
-                Valider le devis & Lancer les travaux <ChevronRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        )}
-      </section>
+      ) : (
+        <button
+          type="button"
+          onClick={handleValidateClient}
+          disabled={isSubmitting}
+          className="w-full py-4 px-6 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.35)] flex items-center justify-center gap-2 cursor-pointer transition-all"
+        >
+          {isSubmitting ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin" /> Transmission de l'accord...
+            </>
+          ) : (
+            <>
+              Valider cette option ({optionType === "circulaire" ? (totalTTC * 0.85).toFixed(2) : totalTTC.toFixed(2)} € TTC)
+            </>
+          )}
+        </button>
+      )}
     </main>
   )
 }
