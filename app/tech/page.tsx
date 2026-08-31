@@ -128,7 +128,7 @@ export default function AtelierTech() {
     }
   }
 
-  // Scan Photo Diagbox / Pièce via Jack Vision
+  // Scan Photo Diagbox / Pièce via Jack Vision (Asynchrone propre)
   const handleTechPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -139,8 +139,8 @@ export default function AtelierTech() {
 
     const reader = new FileReader()
     reader.onloadend = async () => {
-      const base64String = reader.result as string
       try {
+        const base64String = reader.result as string
         const res = await fetch("/api/diag-vision", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -158,37 +158,20 @@ export default function AtelierTech() {
           setMessages(prev => [
             ...prev,
             { role: "user", content: "📷 [Photo transmise pour analyse]" },
-            { role: "assistant", content: `⚠️ Erreur Vision : ${data.error || "Échec de l'analyse."}` }
+            { role: "assistant", content: `⚠️ Jack Vision : ${data.error || "Échec de l'analyse."}` }
           ])
         } else {
           setMessages(prev => [
             ...prev,
             { role: "user", content: "📷 [Photo transmise pour analyse]" },
-            { role: "assistant", content: data.result }
+            { role: "assistant", content: data.result || "Aucune anomalie détectée." }
           ])
         }
-      } catch (err: any) {
+      } catch (err) {
         setMessages(prev => [
           ...prev,
-          { role: "assistant", content: "⚠️ Erreur réseau : impossible d'envoyer la photo." }
+          { role: "assistant", content: "⚠️ Erreur réseau : impossible d'analyser la photo." }
         ])
-      } finally {
-        setLoadingVision(false)
-      }
-    }
-    reader.readAsDataURL(file)
-  }
-
-        const data = await res.json()
-        const visionResult = data.result || "Aucun défaut identifié sur l'image."
-        
-        setMessages(prev => [
-          ...prev, 
-          { role: "user", content: "📷 [Photo écran / composant transmise pour analyse]" },
-          { role: "assistant", content: visionResult }
-        ])
-      } catch (err) {
-        console.error("Erreur vision :", err)
       } finally {
         setLoadingVision(false)
       }
