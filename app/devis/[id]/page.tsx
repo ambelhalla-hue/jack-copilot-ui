@@ -7,15 +7,15 @@ import {
   ShieldCheck, 
   Sparkles, 
   ChevronRight, 
-  ChevronDown,
+  ChevronDown, 
   Car, 
-  RefreshCw,
-  Layers,
-  Wrench,
-  ArrowLeft,
-  Package,
-  Cpu,
-  Info
+  RefreshCw, 
+  Layers, 
+  Wrench, 
+  ArrowLeft, 
+  Package, 
+  Cpu, 
+  Info 
 } from "lucide-react"
 import { getAllDossiers, updateDossierStatusAndData } from "@/lib/supabase"
 
@@ -24,12 +24,10 @@ export default function DevisClientInteractif() {
   const [selectedDossier, setSelectedDossier] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Options du devis
   const [optionType, setOptionType] = useState<"origine" | "circulaire">("circulaire")
   const [validated, setValidated] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Gestion des accordéons cliquables
   const [openPieces, setOpenPieces] = useState(true)
   const [openPeripheriques, setOpenPeripheriques] = useState(false)
   const [openMO, setOpenMO] = useState(false)
@@ -42,7 +40,7 @@ export default function DevisClientInteractif() {
         setDossiers(list)
       }
     } catch (err) {
-      console.error("Erreur chargement dossiers clients", err)
+      console.error("Erreur chargement dossiers", err)
     } finally {
       setLoading(false)
     }
@@ -53,36 +51,54 @@ export default function DevisClientInteractif() {
   }, [])
 
   const handleSelectVehicle = (d: any) => {
-    setSelectedDossier(d)
-    setValidated(d.statut === "valide_client")
-    setOptionType(d.choix_client?.includes("Origine") ? "origine" : "circulaire")
-    setOpenPieces(true)
-    setOpenPeripheriques(false)
-    setOpenMO(false)
+    try {
+      setSelectedDossier(d)
+      setValidated(d?.statut === "valide_client")
+      setOptionType(d?.choix_client?.includes("Origine") ? "origine" : "circulaire")
+      setOpenPieces(true)
+      setOpenPeripheriques(false)
+      setOpenMO(false)
+    } catch (e) {
+      console.error("Erreur sélection dossier", e)
+    }
   }
 
-  const devis = selectedDossier?.devis_ia
+  // Extraction sécurisée des données de devis
+  const devis = selectedDossier?.devis_ia || {}
   const pieces = Array.isArray(devis?.pieces_principales) ? devis.pieces_principales : []
   const peripheriques = Array.isArray(devis?.peripheriques) ? devis.peripheriques : []
   const mainOeuvre = Array.isArray(devis?.main_oeuvre) ? devis.main_oeuvre : []
 
-  // Tarification dynamique selon le dossier réel
-  const totalHeures = mainOeuvre.reduce((acc: number, curr: any) => acc + (Number(curr.heures) || 0), 0)
-  const montantMO = totalHeures > 0 ? totalHeures * 85.00 : 95.00
+  // Tarification sécurisée anti-NaN
+  const totalHeures = mainOeuvre.reduce((acc: number, curr: any) => {
+    const h = typeof curr?.heures === "number" ? curr.heures : parseFloat(curr?.heures) || 0
+    return acc + h
+  }, 0)
 
-  const basePieces = pieces.reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 85.00) * Number(p.quantite || 1)), 0)
-  const baseFournitures = peripheriques.reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 15.00) * Number(p.quantite || 1)), 0)
+  const montantMO = totalHeures > 0 ? totalHeures * 85.0 : 95.0
 
-  const totalHT_Origine = montantMO + (basePieces > 0 ? basePieces : 140.00) + (baseFournitures > 0 ? baseFournitures : 15.00)
-  const totalTTC_Origine = totalHT_Origine * 1.20
+  const basePieces = pieces.reduce((acc: number, p: any) => {
+    const pu = typeof p?.prix_unitaire_ht === "number" ? p.prix_unitaire_ht : parseFloat(p?.prix_unitaire_ht) || 85.0
+    const q = typeof p?.quantite === "number" ? p.quantite : parseInt(p?.quantite) || 1
+    return acc + (pu * q)
+  }, 0)
 
-  const totalHT_Circulaire = montantMO + ((basePieces > 0 ? basePieces : 140.00) * 0.70) + (baseFournitures > 0 ? baseFournitures : 15.00)
-  const totalTTC_Circulaire = totalHT_Circulaire * 1.20
+  const baseFournitures = peripheriques.reduce((acc: number, p: any) => {
+    const pu = typeof p?.prix_unitaire_ht === "number" ? p.prix_unitaire_ht : parseFloat(p?.prix_unitaire_ht) || 15.0
+    const q = typeof p?.quantite === "number" ? p.quantite : parseInt(p?.quantite) || 1
+    return acc + (pu * q)
+  }, 0)
+
+  const totalHT_Origine = montantMO + (basePieces > 0 ? basePieces : 140.0) + (baseFournitures > 0 ? baseFournitures : 15.0)
+  const totalTTC_Origine = totalHT_Origine * 1.2
+
+  const totalHT_Circulaire = montantMO + ((basePieces > 0 ? basePieces : 140.0) * 0.7) + (baseFournitures > 0 ? baseFournitures : 15.0)
+  const totalTTC_Circulaire = totalHT_Circulaire * 1.2
 
   const totalFinalTTC = optionType === "circulaire" ? totalTTC_Circulaire : totalTTC_Origine
 
   const handleValidateClient = async () => {
-    if (!selectedDossier) return
+    if (!selectedDossier?.id) return
     setIsSubmitting(true)
     try {
       const choixLabel = optionType === "origine" ? "Pièces d'Origine Constructeur" : "Économie Circulaire (PIEC -30%)"
@@ -92,13 +108,12 @@ export default function DevisClientInteractif() {
       })
       setValidated(true)
     } catch (err: any) {
-      alert("Erreur lors de la validation : " + err.message)
+      alert("Erreur lors de la validation : " + (err?.message || "Inconnue"))
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  // ÉCRAN 1 : LISTE DE SÉLECTION DES DOSSIERS DE L'ATELIER
   if (!selectedDossier) {
     return (
       <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4">
@@ -120,11 +135,11 @@ export default function DevisClientInteractif() {
         <section className="flex flex-col gap-3">
           {loading ? (
             <div className="text-center py-12 text-xs text-slate-500 flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" /> Chargement des dossiers réels...
+              <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" /> Chargement des dossiers...
             </div>
           ) : dossiers.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-500 bg-[#111827]/40 border border-white/5 rounded-2xl">
-              Aucun dossier client trouvé dans Supabase.
+              Aucun dossier client trouvé.
             </div>
           ) : (
             dossiers.map((d) => (
@@ -136,7 +151,7 @@ export default function DevisClientInteractif() {
                 <div className="flex-1 pr-2">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
-                      {d.immatriculation}
+                      {d.immatriculation || "SANS-IMMAT"}
                     </span>
                     <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-mono ${
                       d.statut === "valide_client"
@@ -162,11 +177,9 @@ export default function DevisClientInteractif() {
     )
   }
 
-  // ÉCRAN 2 : LE DEVIS DU VÉHICULE SÉLECTIONNÉ
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4 pb-12 selection:bg-emerald-500/30">
       
-      {/* HEADER AVEC RETOUR */}
       <header className="flex items-center justify-between p-4 bg-[#111827] border border-white/10 rounded-2xl shadow-lg">
         <div className="flex items-center gap-3">
           <button
@@ -179,7 +192,7 @@ export default function DevisClientInteractif() {
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
-                {selectedDossier.immatriculation}
+                {selectedDossier.immatriculation || "---"}
               </span>
               <h1 className="font-bold text-sm text-slate-100">{selectedDossier.vin || "Véhicule client"}</h1>
             </div>
@@ -190,7 +203,6 @@ export default function DevisClientInteractif() {
         </div>
       </header>
 
-      {/* RAPPORT DE DIAGNOSTIC */}
       <section className="bg-[#111827]/80 border border-white/10 rounded-2xl p-4 space-y-1.5 shadow-md">
         <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1">
           <Info className="w-3 h-3 text-emerald-400" /> Rapport de Diagnostic & Contrôles
@@ -200,14 +212,12 @@ export default function DevisClientInteractif() {
         </p>
       </section>
 
-      {/* FORMULE DE RÉPARATION */}
       <section className="space-y-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-1">
           Choisissez votre option de réparation :
         </span>
 
         <div className="flex flex-col gap-2.5">
-          {/* Option 1 : Économie Circulaire */}
           <div
             onClick={() => !validated && setOptionType("circulaire")}
             className={`p-4 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
@@ -225,10 +235,11 @@ export default function DevisClientInteractif() {
                 <p className="text-[10px] text-slate-400 mt-0.5">Éco-responsable & Économique (PIEC -30% pièces)</p>
               </div>
             </div>
-            <span className="font-mono text-sm font-bold text-emerald-400">{totalTTC_Circulaire.toFixed(2)} € TTC</span>
+            <span className="font-mono text-sm font-bold text-emerald-400">
+              {Number(totalTTC_Circulaire || 0).toFixed(2)} € TTC
+            </span>
           </div>
 
-          {/* Option 2 : Pièces d'Origine */}
           <div
             onClick={() => !validated && setOptionType("origine")}
             className={`p-4 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
@@ -246,18 +257,18 @@ export default function DevisClientInteractif() {
                 <p className="text-[10px] text-slate-400 mt-0.5">Garantie Constructeur</p>
               </div>
             </div>
-            <span className="font-mono text-sm font-bold text-blue-400">{totalTTC_Origine.toFixed(2)} € TTC</span>
+            <span className="font-mono text-sm font-bold text-blue-400">
+              {Number(totalTTC_Origine || 0).toFixed(2)} € TTC
+            </span>
           </div>
         </div>
       </section>
 
-      {/* DÉTAIL DÉPLIABLE DU DEVIS (ACCORDÉONS) */}
       <section className="space-y-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-1">
           Détail des opérations (Cliquez pour afficher)
         </span>
 
-        {/* 1. Pièces Principales */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -279,10 +290,10 @@ export default function DevisClientInteractif() {
                 pieces.map((p: any, i: number) => (
                   <div key={i} className="flex justify-between items-start bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
                     <div>
-                      <span className="text-slate-200 font-medium block leading-tight">{p.designation}</span>
-                      <span className="text-[10px] font-mono text-slate-500">Réf : {p.ref || "OEM-STD"}</span>
+                      <span className="text-slate-200 font-medium block leading-tight">{p?.designation || "Pièce"}</span>
+                      <span className="text-[10px] font-mono text-slate-500">Réf : {p?.ref || "OEM-STD"}</span>
                     </div>
-                    <span className="font-mono text-cyan-400 font-bold shrink-0 ml-2">x{p.quantite || 1}</span>
+                    <span className="font-mono text-cyan-400 font-bold shrink-0 ml-2">x{p?.quantite || 1}</span>
                   </div>
                 ))
               )}
@@ -290,7 +301,6 @@ export default function DevisClientInteractif() {
           )}
         </div>
 
-        {/* 2. Périphériques */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -314,8 +324,8 @@ export default function DevisClientInteractif() {
               ) : (
                 peripheriques.map((p: any, i: number) => (
                   <div key={i} className="flex justify-between items-center bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
-                    <span className="text-slate-300">{p.designation}</span>
-                    <span className="font-mono text-amber-400 font-bold">x{p.quantite || 1}</span>
+                    <span className="text-slate-300">{p?.designation || "Fournitures"}</span>
+                    <span className="font-mono text-amber-400 font-bold">x{p?.quantite || 1}</span>
                   </div>
                 ))
               )}
@@ -323,7 +333,6 @@ export default function DevisClientInteractif() {
           )}
         </div>
 
-        {/* 3. Main-d'œuvre */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -347,8 +356,8 @@ export default function DevisClientInteractif() {
               ) : (
                 mainOeuvre.map((m: any, i: number) => (
                   <div key={i} className="flex justify-between items-center bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 text-slate-300">
-                    <span>{m.operation}</span>
-                    <span className="font-mono text-emerald-400 font-bold">{m.heures} h</span>
+                    <span>{m?.operation || "Opération atelier"}</span>
+                    <span className="font-mono text-emerald-400 font-bold">{m?.heures || 0} h</span>
                   </div>
                 ))
               )}
@@ -357,7 +366,6 @@ export default function DevisClientInteractif() {
         </div>
       </section>
 
-      {/* DÉLAI DE RESTITUTION */}
       <div className="flex items-center justify-between p-3.5 bg-slate-900/90 border border-white/5 rounded-2xl text-xs">
         <div className="flex items-center gap-2 text-slate-300">
           <Clock className="w-4 h-4 text-amber-400 shrink-0" />
@@ -368,7 +376,6 @@ export default function DevisClientInteractif() {
         </span>
       </div>
 
-      {/* VALIDATION */}
       {validated ? (
         <div className="p-4 bg-emerald-950/40 border border-emerald-500/50 rounded-2xl text-center flex items-center justify-center gap-2 text-emerald-300 text-xs font-bold">
           <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Option validée — Travaux autorisés !
@@ -386,7 +393,7 @@ export default function DevisClientInteractif() {
             </>
           ) : (
             <>
-              Valider cette option ({totalFinalTTC.toFixed(2)} € TTC)
+              Valider cette option ({Number(totalFinalTTC || 0).toFixed(2)} € TTC)
             </>
           )}
         </button>
