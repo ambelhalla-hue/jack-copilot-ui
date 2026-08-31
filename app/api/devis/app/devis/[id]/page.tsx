@@ -24,12 +24,10 @@ export default function ClientInteractiveDevis() {
   const [selectedDossier, setSelectedDossier] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Options du devis
   const [optionType, setOptionType] = useState<"origine" | "circulaire">("circulaire")
   const [validated, setValidated] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Gestion des accordéons cliquables
   const [openPieces, setOpenPieces] = useState(true)
   const [openPeripheriques, setOpenPeripheriques] = useState(false)
   const [openMO, setOpenMO] = useState(false)
@@ -42,7 +40,7 @@ export default function ClientInteractiveDevis() {
         setDossiers(list)
       }
     } catch (err) {
-      console.error("Erreur chargement dossiers clients", err)
+      console.error("Erreur chargement dossiers", err)
     } finally {
       setLoading(false)
     }
@@ -66,7 +64,6 @@ export default function ClientInteractiveDevis() {
   const peripheriques = Array.isArray(devis?.peripheriques) ? devis.peripheriques : []
   const mainOeuvre = Array.isArray(devis?.main_oeuvre) ? devis.main_oeuvre : []
 
-  // Tarification dynamique
   const totalHeures = mainOeuvre.reduce((acc: number, curr: any) => acc + (Number(curr.heures) || 0), 0)
   const montantMO = totalHeures > 0 ? totalHeures * 85.00 : 95.00
 
@@ -92,13 +89,12 @@ export default function ClientInteractiveDevis() {
       })
       setValidated(true)
     } catch (err: any) {
-      alert("Erreur lors de la validation : " + err.message)
+      alert("Erreur validation : " + err.message)
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  // VUE 1 : CHOIX DU VÉHICULE CLIENT
   if (!selectedDossier) {
     return (
       <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4">
@@ -162,11 +158,9 @@ export default function ClientInteractiveDevis() {
     )
   }
 
-  // VUE 2 : CE QUE LE CLIENT REÇOIT SUR SON SMARTPHONE
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4 pb-12 selection:bg-emerald-500/30">
       
-      {/* HEADER AVEC RETOUR */}
       <header className="flex items-center justify-between p-4 bg-[#111827] border border-white/10 rounded-2xl shadow-lg">
         <div className="flex items-center gap-3">
           <button
@@ -190,7 +184,6 @@ export default function ClientInteractiveDevis() {
         </div>
       </header>
 
-      {/* RAPPORT DE DIAGNOSTIC */}
       <section className="bg-[#111827]/80 border border-white/10 rounded-2xl p-4 space-y-1.5 shadow-md">
         <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1">
           <Info className="w-3 h-3 text-emerald-400" /> Rapport de Diagnostic & Contrôles
@@ -200,14 +193,12 @@ export default function ClientInteractiveDevis() {
         </p>
       </section>
 
-      {/* CHOIX DE LA FORMULE DE RÉPARATION */}
       <section className="space-y-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-1">
           Choisissez votre option de réparation :
         </span>
 
         <div className="flex flex-col gap-2.5">
-          {/* Option 1 : Économie Circulaire */}
           <div
             onClick={() => !validated && setOptionType("circulaire")}
             className={`p-4 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
@@ -228,7 +219,6 @@ export default function ClientInteractiveDevis() {
             <span className="font-mono text-sm font-bold text-emerald-400">{totalTTC_Circulaire.toFixed(2)} € TTC</span>
           </div>
 
-          {/* Option 2 : Pièces Neuves d'Origine */}
           <div
             onClick={() => !validated && setOptionType("origine")}
             className={`p-4 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
@@ -251,13 +241,11 @@ export default function ClientInteractiveDevis() {
         </div>
       </section>
 
-      {/* DÉTAIL DÉPLIABLE DU DEVIS (ACCORDÉONS) */}
       <section className="space-y-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-1">
           Détail des opérations (Cliquez pour afficher)
         </span>
 
-        {/* 1. Pièces Principales */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -290,7 +278,6 @@ export default function ClientInteractiveDevis() {
           )}
         </div>
 
-        {/* 2. Périphériques et Fournitures */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -323,7 +310,6 @@ export default function ClientInteractiveDevis() {
           )}
         </div>
 
-        {/* 3. Main-d'Œuvre */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -357,7 +343,6 @@ export default function ClientInteractiveDevis() {
         </div>
       </section>
 
-      {/* DÉLAI DE RESTITUTION */}
       <div className="flex items-center justify-between p-3.5 bg-slate-900/90 border border-white/5 rounded-2xl text-xs">
         <div className="flex items-center gap-2 text-slate-300">
           <Clock className="w-4 h-4 text-amber-400 shrink-0" />
@@ -368,7 +353,6 @@ export default function ClientInteractiveDevis() {
         </span>
       </div>
 
-      {/* BOUTON VALIDATION CLIENT */}
       {validated ? (
         <div className="p-4 bg-emerald-950/40 border border-emerald-500/50 rounded-2xl text-center flex items-center justify-center gap-2 text-emerald-300 text-xs font-bold">
           <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Option validée — Travaux autorisés !
@@ -386,7 +370,7 @@ export default function ClientInteractiveDevis() {
             </>
           ) : (
             <>
-              Valider cette option ({totalFinalTTC.toFixed(2)} € TTC)
+              Valider cette option ({optionType === "circulaire" ? totalTTC_Circulaire.toFixed(2) : totalTTC_Origine.toFixed(2)} € TTC)
             </>
           )}
         </button>
