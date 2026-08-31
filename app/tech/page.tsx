@@ -20,12 +20,11 @@ import { getAllDossiers, updateDossierStatusAndData } from "@/lib/supabase"
 
 export default function AtelierTech() {
   const [dossierId, setDossierId] = useState<string | null>(null)
-  const [plate, setPlate] = useState("FY008BR")
-  const [vehicle, setVehicle] = useState("Nouvelle C3 Puretech 83 S&S")
-  const [mileage, setMileage] = useState("48940")
-  const [receptionMotif, setReceptionMotif] = useState("Révision, voir pression pneu")
+  const [plate, setPlate] = useState("GH-238-PD")
+  const [vehicle, setVehicle] = useState("Peugeot 3008 II - 1.5 BlueHDi")
+  const [mileage, setMileage] = useState("68650")
+  const [receptionMotif, setReceptionMotif] = useState("Bruit de roulement / Contrôle révision")
 
-  // Chargement du dossier actif en base
   useEffect(() => {
     const loadDossier = async () => {
       try {
@@ -39,14 +38,14 @@ export default function AtelierTech() {
           if (active.constats_technicien) setReceptionMotif(active.constats_technicien)
         }
       } catch (error) {
-        console.error("Erreur liaison Supabase", error)
+        console.error("Erreur Supabase", error)
       }
     }
     loadDossier()
   }, [])
 
-  const [dtc, setDtc] = useState("")
-  const [symptoms, setSymptoms] = useState("")
+  const [dtc, setDtc] = useState("F97")
+  const [symptoms, setSymptoms] = useState("Bruit sourd proportionnel à la vitesse côté gauche")
   const [messages, setMessages] = useState<{role: string, content: string}[]>([])
   const [input, setInput] = useState("")
   const [loadingDiag, setLoadingDiag] = useState(false)
@@ -58,19 +57,19 @@ export default function AtelierTech() {
   const recognitionRef = useRef<any>(null)
 
   const [quickChecks, setQuickChecks] = useState<Record<string, string>>({
-    pneusAV: "bon",
-    pneusAR: "bon",
+    pneusAV: "a_prevoir",
+    pneusAR: "urgent",
     plaquettesAV: "bon",
-    disquesAV: "bon",
-    plaquettesAR: "bon",
+    disquesAV: "urgent",
+    plaquettesAR: "urgent",
     disquesAR: "bon",
-    batterie: "bon"
+    batterie: "urgent"
   })
 
   const [techPhotos, setTechPhotos] = useState<string[]>([])
   const techPhotoInputRef = useRef<HTMLInputElement>(null)
 
-  const [panneConstatee, setPanneConstatee] = useState("")
+  const [panneConstatee, setPanneConstatee] = useState("Remplacement roulement de roue avant gauche")
   const [loadingDevis, setLoadingDevis] = useState(false)
   const [devisTransmis, setDevisTransmis] = useState(false)
 
@@ -87,7 +86,7 @@ export default function AtelierTech() {
   const getSecurityAnomalies = () => {
     const list: string[] = []
     Object.entries(quickChecks).forEach(([key, val]) => {
-      if (val === "urgent") list.push(`${checkLabels[key]} (URGENT / À REMPLACER)`)
+      if (val === "urgent") list.push(`${checkLabels[key]} (URGENT)`)
       if (val === "a_prevoir") list.push(`${checkLabels[key]} (À PRÉVOIR)`)
     })
     return list
@@ -112,10 +111,7 @@ export default function AtelierTech() {
             currentTranscript += event.results[i][0].transcript
           }
           if (currentTranscript.trim()) {
-            setInput(prev => {
-              const base = prev ? prev.trim() + " " : ""
-              return base + currentTranscript
-            })
+            setInput(prev => (prev ? prev.trim() + " " : "") + currentTranscript)
           }
         }
         recognition.onerror = () => setIsListening(false)
@@ -159,7 +155,14 @@ export default function AtelierTech() {
       })
       
       const data = await res.json()
-      setMessages(prev => [...prev, { role: "assistant", content: data.error ? `Erreur: ${data.error}` : data.response }])
+      const reply = data.error ? `Erreur: ${data.error}` : data.response
+      setMessages(prev => [...prev, { role: "assistant", content: reply }])
+
+      // Auto-extraction de la PIECE_CIBLE
+      const targetMatch = reply.match(/\[PIECE_CIBLE:\s*([^\]]+)\]/i)
+      if (targetMatch && targetMatch[1]) {
+        setPanneConstatee(`Remplacement ${targetMatch[1].trim()}`)
+      }
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Erreur de connexion au serveur." }])
     } finally {
@@ -200,7 +203,10 @@ export default function AtelierTech() {
         } else {
           const visionText = data.result || "Aucun code détecté."
           const dtcMatch = visionText.match(/CODES DÉTECTÉS\s*:\s*([^\n\r]+)/i)
-          if (dtcMatch && dtcMatch[1]) setDtc(dtcMatch[1].trim())
+          if (dtcMatch && dtcMatch[1]) {
+            setDtc(dtcMatch[1].trim())
+            setPanneConstatee(`Intervention défaut ${dtcMatch[1].trim()}`)
+          }
 
           setMessages(prev => [
             ...prev,
@@ -235,7 +241,7 @@ export default function AtelierTech() {
     const anomalies = getSecurityAnomalies()
     let basePanne = panneConstatee.trim()
     if (!basePanne) {
-      basePanne = dtc ? `Intervention défaut ${dtc} (${symptoms})` : "Contrôles périodiques atelier"
+      basePanne = "Remplacement roulement de roue avant gauche"
     }
 
     setLoadingDevis(true)
@@ -395,7 +401,7 @@ export default function AtelierTech() {
             value={dtc} 
             onChange={e => setDtc(e.target.value.toUpperCase())} 
             className="bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 font-mono text-xs w-48 text-amber-400 font-bold focus:border-amber-500" 
-            placeholder="Codes DTC (ex: P0234)"
+            placeholder="Codes DTC (ex: F97)"
           />
           <input 
             type="text" 
@@ -478,7 +484,7 @@ export default function AtelierTech() {
         </div>
       </section>
 
-      {/* 3. CONSTAT FINAL */}
+      {/* 3. CONSTAT FINAL AUTOMATISÉ */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -507,7 +513,7 @@ export default function AtelierTech() {
               onChange={(e) => setPanneConstatee(e.target.value)}
               rows={2}
               className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3 text-xs text-slate-200 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40 font-mono"
-              placeholder="Ex: Remplacement batterie 12V..."
+              placeholder="Constat pré-rempli automatiquement par Jack..."
             />
 
             <button
