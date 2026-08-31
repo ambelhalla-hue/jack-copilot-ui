@@ -128,7 +128,7 @@ export default function AtelierTech() {
     }
   }
 
-  // Scan Photo Diagbox / Pièce via Jack Vision (Asynchrone propre)
+// Scan Photo Diagbox / Pièce via Jack Vision (Extraction Codes Multiples)
   const handleTechPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -148,7 +148,7 @@ export default function AtelierTech() {
             imageBase64: base64String,
             mimeType: file.type || "image/jpeg",
             vehicleContext: `${vehicle} (${plate})`,
-            userNotes: `DTC: ${dtc}, Symptômes: ${symptoms}`
+            userNotes: `Symptômes actuels : ${symptoms}`
           })
         })
 
@@ -157,20 +157,27 @@ export default function AtelierTech() {
         if (!res.ok || data.error) {
           setMessages(prev => [
             ...prev,
-            { role: "user", content: "📷 [Photo transmise pour analyse]" },
+            { role: "user", content: "📷 [Photo Diagbox transmise]" },
             { role: "assistant", content: `⚠️ Jack Vision : ${data.error || "Échec de l'analyse."}` }
           ])
         } else {
+          const visionText = data.result || "Aucune anomalie détectée."
+          
+          const dtcMatch = visionText.match(/CODES DÉTECTÉS\s*:\s*([^\n\r]+)/i)
+          if (dtcMatch && dtcMatch[1]) {
+            setDtc(dtcMatch[1].trim())
+          }
+
           setMessages(prev => [
             ...prev,
-            { role: "user", content: "📷 [Photo transmise pour analyse]" },
-            { role: "assistant", content: data.result || "Aucune anomalie détectée." }
+            { role: "user", content: "📷 [Scan écran valise Diagbox]" },
+            { role: "assistant", content: visionText }
           ])
         }
       } catch (err) {
         setMessages(prev => [
           ...prev,
-          { role: "assistant", content: "⚠️ Erreur réseau : impossible d'analyser la photo." }
+          { role: "assistant", content: "⚠️ Erreur réseau lors du scan de la valise." }
         ])
       } finally {
         setLoadingVision(false)
@@ -341,13 +348,13 @@ export default function AtelierTech() {
           </div>
         )}
 
-        <div className="flex gap-2">
+       <div className="flex gap-2">
           <input 
             type="text" 
             value={dtc} 
             onChange={e => setDtc(e.target.value.toUpperCase())} 
-            className="bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 font-mono text-xs w-28 text-amber-400 font-bold focus:border-amber-500" 
-            placeholder="Code DTC"
+            className="bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 font-mono text-xs w-48 text-amber-400 font-bold focus:border-amber-500" 
+            placeholder="Codes DTC (ex: P0234, P0100)"
           />
           <input 
             type="text" 
