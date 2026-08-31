@@ -56,13 +56,20 @@ export default function AtelierTech() {
   const [loadingDevis, setLoadingDevis] = useState(false)
   const [devisTransmis, setDevisTransmis] = useState(false)
 
-  // Chargement de la file d'attente depuis Supabase
+  // Chargement de la file d'attente active (exclusion des dossiers terminés)
   const loadDossiersList = async () => {
     try {
       setLoadingList(true)
       const list = await getAllDossiers()
       if (list && Array.isArray(list)) {
-        setDossiers(list)
+        // Ne conserve que les véhicules en attente de diag ou d'intervention
+        const enCours = list.filter((d: any) => 
+          d.statut !== "valide_chef" && 
+          d.statut !== "valide_client" && 
+          d.statut !== "termine" &&
+          d.statut !== "cloture"
+        )
+        setDossiers(enCours)
       }
     } catch (error) {
       console.error("Erreur chargement file d'attente", error)
