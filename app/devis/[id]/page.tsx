@@ -18,13 +18,12 @@ import {
 } from "lucide-react"
 import { getAllDossiers, updateDossierStatusAndData } from "@/lib/supabase"
 
-// Fonction de sécurité absolue pour éviter tout crash React
 function toText(val: any, fallback = ""): string {
   if (val === null || val === undefined) return fallback
   if (typeof val === "string") return val
   if (typeof val === "number") return String(val)
   if (typeof val === "object") {
-    return val.constat_court || val.designation || val.operation || val.label || ""
+    return val.constat_court || val.designation || val.operation || val.label || JSON.stringify(val)
   }
   return String(val)
 }
@@ -60,7 +59,7 @@ export default function DevisClientInteractif() {
         setDossiers(list)
       }
     } catch (err) {
-      console.error("Erreur chargement Supabase:", err)
+      console.error("Erreur chargement:", err)
     } finally {
       setLoading(false)
     }
@@ -80,13 +79,11 @@ export default function DevisClientInteractif() {
     setOpenMO(false)
   }
 
-  // Extraction blindée contre les crashs
   const devisObj = parseSafe(selectedDossier?.devis_ia || selectedDossier?.devis_brouillon)
   const pieces = Array.isArray(devisObj?.pieces_principales) ? devisObj.pieces_principales : []
   const peripheriques = Array.isArray(devisObj?.peripheriques) ? devisObj.peripheriques : []
   const mainOeuvre = Array.isArray(devisObj?.main_oeuvre) ? devisObj.main_oeuvre : []
 
-  // Tarification
   const totalHeures = mainOeuvre.reduce((acc: number, curr: any) => {
     const h = typeof curr?.heures === "number" ? curr.heures : parseFloat(curr?.heures) || 0
     return acc + h
@@ -125,13 +122,12 @@ export default function DevisClientInteractif() {
       })
       setValidated(true)
     } catch (err: any) {
-      alert("Erreur lors de la validation : " + (err?.message || "Inconnue"))
+      alert("Erreur validation : " + (err?.message || "Inconnue"))
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  // ÉCRAN 1 : LISTE DE SÉLECTION
   if (!selectedDossier) {
     return (
       <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4">
@@ -157,7 +153,7 @@ export default function DevisClientInteractif() {
             </div>
           ) : dossiers.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-500 bg-[#111827]/40 border border-white/5 rounded-2xl">
-              Aucun dossier client trouvé dans Supabase.
+              Aucun dossier trouvé dans Supabase.
             </div>
           ) : (
             dossiers.map((d) => (
@@ -195,10 +191,8 @@ export default function DevisClientInteractif() {
     )
   }
 
-  // ÉCRAN 2 : DEVIS DÉTAILLÉ
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4 pb-12 selection:bg-emerald-500/30">
-      
       <header className="flex items-center justify-between p-4 bg-[#111827] border border-white/10 rounded-2xl shadow-lg">
         <div className="flex items-center gap-3">
           <button
@@ -288,7 +282,6 @@ export default function DevisClientInteractif() {
           Détail des opérations (Cliquez pour afficher)
         </span>
 
-        {/* 1. Pièces Principales */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -321,7 +314,6 @@ export default function DevisClientInteractif() {
           )}
         </div>
 
-        {/* 2. Périphériques */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
@@ -330,7 +322,7 @@ export default function DevisClientInteractif() {
           >
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-amber-400" />
-              <span>Périphériques & Fournitures ({peripherals.length || 1})</span>
+              <span>Périphériques & Fournitures ({peripheriques.length || 1})</span>
             </div>
             {openPeripheriques ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
           </button>
@@ -354,7 +346,6 @@ export default function DevisClientInteractif() {
           )}
         </div>
 
-        {/* 3. Main-d'œuvre */}
         <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
           <button
             type="button"
