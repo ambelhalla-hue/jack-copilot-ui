@@ -1,387 +1,112 @@
-"use client"
+import { NextResponse } from "next/server"
 
-import { useState, useEffect } from "react"
-import { 
-  CheckCircle2, 
-  Clock, 
-  ShieldCheck, 
-  Sparkles, 
-  ChevronRight, 
-  ChevronDown,
-  Car, 
-  RefreshCw,
-  Layers,
-  Wrench,
-  ArrowLeft,
-  Package,
-  Cpu,
-  Info
-} from "lucide-react"
-import { getAllDossiers, updateDossierStatusAndData } from "@/lib/supabase"
+export const maxDuration = 60
 
-export default function ClientInteractiveDevis() {
-  const [dossiers, setDossiers] = useState<any[]>([])
-  const [selectedDossier, setSelectedDossier] = useState<any | null>(null)
-  const [loading, setLoading] = useState(true)
+export async function POST(req: Request) {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY
+    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 
-  // Options du devis
-  const [optionType, setOptionType] = useState<"origine" | "circulaire">("origine")
-  const [validated, setValidated] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+    if (!apiKey) {
+      return NextResponse.json({ error: "Clé GEMINI_API_KEY manquante." }, { status: 500 })
+    }
 
-  // États pour ouvrir / fermer les accordéons
-  const [openPieces, setOpenPieces] = useState(true)
-  const [openPeripheriques, setOpenPeripheriques] = useState(false)
-  const [openMO, setOpenMO] = useState(false)
+    const body = await req.json()
+    const { dossierId, vehicle, immat, kilometrage, panne_constatee, options_travaux } = body
 
-  const loadClientDossiers = async () => {
+    const userPrompt = `Tu es un chiffreur expert après-vente automobile.
+Génère la nomenclature DÉTAILLÉE et COMPLÈTE en JSON STRICT (sans markdown, sans texte autour) pour :
+Véhicule : ${vehicle || "Véhicule Atelier"} (${immat || "N/A"}) - Kilométrage : ${kilometrage || "100000"} km
+Constats mécaniques : ${panne_constatee || "Remplacement pièces"}
+Contrôles atelier signalés : ${options_travaux || "Non spécifié"}
+
+EXIGENCES ABSOLUES DU DEVIS :
+1. EXHAUSTIVITÉ TOTALE : Tu DOIS créer une ligne distincte dans "pieces_principales" pour la panne mécanique ET pour CHAQUE organe noté urgent ou à prévoir (ex: "Batterie 12V", "Jeu de plaquettes de frein avant", "Pneumatiques avant (x2)").
+2. RÈGLE FREINAGE : Si les disques sont à changer, inclus obligatoirement les disques ET les plaquettes neuves associées.
+3. PÉRIPHÉRIQUES : Ajoute dans "peripheriques" tous les fluides, kits visserie, nettoyants ou consommables nécessaires.
+4. MAIN-D'ŒUVRE : Détaille chaque barème d'opération dans "main_oeuvre" avec l'intitulé clair.
+
+Format JSON STRICT attendu :
+{
+  "constat_court": "Intervention préconisée",
+  "pieces_principales": [
+    { "id": "1", "designation": "Batterie 12V", "ref": "BAT-12V", "quantite": 1 }
+  ],
+  "peripheriques": [
+    { "id": "1", "designation": "Fournitures atelier & nettoyant", "ref": "CONS-01", "quantite": 1 }
+  ],
+  "main_oeuvre": [
+    { "id": "1", "operation": "Remplacement batterie 12V", "heures": 0.5 }
+  ]
+}`
+
+    let devis: any = null
+
     try {
-      setLoading(true)
-      const list = await getAllDossiers()
-      if (list && Array.isArray(list)) {
-        setDossiers(list)
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+            generationConfig: { response_mime_type: "application/json" }
+          })
+        }
+      )
+
+      const data = await response.json()
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text
+      if (rawText) devis = JSON.parse(rawText)
+    } catch (e) {
+      console.error("Erreur parsing IA", e)
+    }
+
+    if (!devis || !Array.isArray(devis.pieces_principales) || devis.pieces_principales.length === 0) {
+      devis = {
+        constat_court: panne_constatee || "Remplacement pièces préconisées",
+        pieces_principales: [
+          { id: "1", designation: panne_constatee || "Organe principal de rechange", ref: "OEM-STD", quantite: 1 }
+        ],
+        peripheriques: [
+          { id: "1", designation: "Fournitures atelier & consommables", ref: "CONS-01", quantite: 1 }
+        ],
+        main_oeuvre: [
+          { id: "1", operation: `Intervention : ${panne_constatee || "Atelier"}`, heures: 1.0 }
+        ]
       }
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoading(false)
     }
-  }
 
-  useEffect(() => {
-    loadClientDossiers()
-  }, [])
+    const constatFinal = devis.constat_court || panne_constatee
 
-  const handleSelectVehicle = (d: any) => {
-    setSelectedDossier(d)
-    setValidated(d.statut === "valide_client")
-    setOptionType(d.choix_client?.includes("Circulaire") ? "circulaire" : "origine")
-    setOpenPieces(true)
-    setOpenPeripheriques(false)
-    setOpenMO(false)
-  }
-
-  const devis = selectedDossier?.devis_ia
-  const pieces = Array.isArray(devis?.pieces_principales) ? devis.pieces_principales : []
-  const peripheriques = Array.isArray(devis?.peripheriques) ? devis.peripheriques : []
-  const mainOeuvre = Array.isArray(devis?.main_oeuvre) ? devis.main_oeuvre : []
-
-  // Tarification dynamique
-  const tauxHoraire = 85.00
-  const totalHeures = mainOeuvre.reduce((acc: number, curr: any) => acc + (Number(curr.heures) || 0), 0)
-  const montantMO = totalHeures > 0 ? totalHeures * tauxHoraire : (devis?.main_oeuvre_ht || 95.00)
-
-  const basePieces = (pieces.length > 0 ? pieces.length * 85.00 : 140.00) + (peripheriques.length * 15.00)
-  const prixPieces = optionType === "circulaire" ? basePieces * 0.70 : basePieces
-  const totalHT = montantMO + prixPieces
-  const totalTTC = totalHT * 1.20
-
-  const handleValidateClient = async () => {
-    if (!selectedDossier) return
-    setIsSubmitting(true)
-    try {
-      const choixLabel = optionType === "origine" ? "Pièces d'Origine Constructeur" : "Économie Circulaire (PIEC -30%)"
-      await updateDossierStatusAndData(selectedDossier.id, {
-        statut: "valide_client",
-        choix_client: choixLabel
-      })
-      setValidated(true)
-    } catch (err) {
-      alert("Erreur validation devis : " + err)
-    } finally {
-      setIsSubmitting(false)
+    if (supabaseUrl && supabaseAnonKey && dossierId) {
+      try {
+        await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?id=eq.${dossierId}`, {
+          method: "PATCH",
+          headers: {
+            "apikey": supabaseAnonKey,
+            "Authorization": `Bearer ${supabaseAnonKey}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+          },
+          body: JSON.stringify({
+            statut: "devis_genere",
+            constats_technicien: constatFinal,
+            devis_ia: devis,
+            updated_at: new Date().toISOString()
+          })
+        })
+      } catch (err) {
+        console.error("Erreur mise à jour Supabase :", err)
+      }
     }
+
+    return NextResponse.json({
+      constat_court: constatFinal,
+      devis
+    })
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Erreur calcul devis." }, { status: 500 })
   }
-
-  // VUE 1 : CHOIX DU DOSSIER CLIENT (POUR TOUS LES CLIENTS)
-  if (!selectedDossier) {
-    return (
-      <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4">
-        <header className="p-4 bg-[#111827]/80 border border-white/10 rounded-2xl shadow-xl flex justify-between items-center">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-emerald-600/20 border border-emerald-500/30 rounded-xl text-emerald-400">
-              <Car className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="font-bold text-base text-slate-100">Vue Client Interactif (SMS)</h1>
-              <p className="text-[11px] text-slate-400">Sélectionnez le dossier à prévisualiser</p>
-            </div>
-          </div>
-          <button onClick={loadClientDossiers} className="p-2 text-slate-400 hover:text-white cursor-pointer">
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-400" : ""}`} />
-          </button>
-        </header>
-
-        <section className="flex flex-col gap-3">
-          {loading ? (
-            <div className="text-center py-12 text-xs text-slate-500 flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" /> Chargement des dossiers clients...
-            </div>
-          ) : dossiers.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-500 bg-[#111827]/40 border border-white/5 rounded-2xl">
-              Aucun dossier client trouvé dans la base de données.
-            </div>
-          ) : (
-            dossiers.map((d) => (
-              <div
-                key={d.id}
-                onClick={() => handleSelectVehicle(d)}
-                className="bg-[#111827]/80 hover:bg-[#111827] border border-white/10 hover:border-emerald-500/50 rounded-2xl p-4 flex justify-between items-center shadow-lg transition cursor-pointer group"
-              >
-                <div className="flex-1 pr-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
-                      {d.immatriculation}
-                    </span>
-                    <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-mono ${
-                      d.statut === "valide_client" ? "bg-emerald-950 text-emerald-400 border border-emerald-800" : "bg-slate-800 text-slate-400"
-                    }`}>
-                      {d.statut || "en attente"}
-                    </span>
-                  </div>
-                  <h2 className="font-bold text-sm text-slate-100 mt-1.5">{d.vin || "Véhicule client"}</h2>
-                  <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">
-                    Constat : <span className="text-slate-200">{d.constats_technicien || "Intervention atelier"}</span>
-                  </p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-emerald-400 transition transform group-hover:translate-x-1" />
-              </div>
-            ))
-          )}
-        </section>
-      </main>
-    )
-  }
-
-  // VUE 2 : CE QUE LE CLIENT REÇOIT SUR SON MOBILE POUR LE DOSSIER CHOISI
-  return (
-    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-lg mx-auto p-4 gap-4 pb-12 selection:bg-emerald-500/30">
-      
-      {/* HEADER AVEC BOUTON DE RETOUR AUX AUTRES DOSSIERS */}
-      <header className="flex items-center justify-between p-4 bg-[#111827] border border-white/10 rounded-2xl shadow-lg">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setSelectedDossier(null)}
-            className="p-2 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-xl text-slate-300 hover:text-white transition cursor-pointer"
-            title="Changer de dossier"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-700/50 text-blue-400 rounded">
-                {selectedDossier.immatriculation}
-              </span>
-              <h1 className="font-bold text-sm text-slate-100">{selectedDossier.vin || "Véhicule client"}</h1>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Compteur : <strong className="text-emerald-400">{selectedDossier.kilometrage ? Number(selectedDossier.kilometrage).toLocaleString("fr-FR") : "---"} km</strong>
-            </p>
-          </div>
-        </div>
-      </header>
-
-      {/* RAPPORT DE DIAGNOSTIC */}
-      <section className="bg-[#111827]/80 border border-white/10 rounded-2xl p-4 space-y-1.5 shadow-md">
-        <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center gap-1">
-          <Info className="w-3 h-3 text-emerald-400" /> Rapport de Diagnostic & Contrôles
-        </span>
-        <p className="text-xs text-slate-200 leading-relaxed font-medium bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
-          {selectedDossier.constats_technicien || "Contrôle technique sur pont et remise en état préconisée."}
-        </p>
-      </section>
-
-      {/* CHOIX DE LA FORMULE */}
-      <section className="space-y-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-1">
-          Choisissez votre option de réparation :
-        </span>
-
-        <div className="flex flex-col gap-2.5">
-          {/* Économie Circulaire */}
-          <div
-            onClick={() => !validated && setOptionType("circulaire")}
-            className={`p-4 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
-              optionType === "circulaire"
-                ? "bg-emerald-950/40 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.25)]"
-                : "bg-[#111827]/60 border-white/5 opacity-70"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-500/20 rounded-xl text-emerald-400">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-xs text-slate-100">Économie Circulaire</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">Éco-responsable & Économique (PIEC)</p>
-              </div>
-            </div>
-            <span className="font-mono text-sm font-bold text-emerald-400">{(totalTTC * 0.85).toFixed(2)} € TTC</span>
-          </div>
-
-          {/* Pièces Neuves d'Origine */}
-          <div
-            onClick={() => !validated && setOptionType("origine")}
-            className={`p-4 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
-              optionType === "origine"
-                ? "bg-blue-950/40 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.25)]"
-                : "bg-[#111827]/60 border-white/5 opacity-70"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/20 rounded-xl text-blue-400">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-xs text-slate-100">Pièces Neuves d'Origine</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">Garantie Constructeur</p>
-              </div>
-            </div>
-            <span className="font-mono text-sm font-bold text-blue-400">{totalTTC.toFixed(2)} € TTC</span>
-          </div>
-        </div>
-      </section>
-
-      {/* DÉTAIL DÉPLIABLE DU DEVIS */}
-      <section className="space-y-2.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-1">
-          Détail des opérations (Cliquez pour afficher)
-        </span>
-
-        {/* 1. Pièces Principales */}
-        <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setOpenPieces(!openPieces)}
-            className="w-full p-3.5 flex justify-between items-center text-xs font-bold text-slate-200 hover:bg-white/5 transition cursor-pointer"
-          >
-            <div className="flex items-center gap-2">
-              <Package className="w-4 h-4 text-cyan-400" />
-              <span>Pièces Principales ({pieces.length})</span>
-            </div>
-            {openPieces ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-          </button>
-
-          {openPieces && (
-            <div className="p-3 pt-0 space-y-2 text-xs border-t border-white/5">
-              {pieces.length === 0 ? (
-                <p className="text-slate-500 text-[11px] italic py-1">Inclus selon diagnostic atelier.</p>
-              ) : (
-                pieces.map((p: any, i: number) => (
-                  <div key={i} className="flex justify-between items-start bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
-                    <div>
-                      <span className="text-slate-200 font-medium block leading-tight">{p.designation}</span>
-                      <span className="text-[10px] font-mono text-slate-500">Réf : {p.ref || "OEM-STD"}</span>
-                    </div>
-                    <span className="font-mono text-cyan-400 font-bold shrink-0 ml-2">x{p.quantite || 1}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* 2. Périphériques et Fournitures */}
-        <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setOpenPeripheriques(!openPeripheriques)}
-            className="w-full p-3.5 flex justify-between items-center text-xs font-bold text-slate-200 hover:bg-white/5 transition cursor-pointer"
-          >
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-amber-400" />
-              <span>Périphériques & Fournitures ({peripherals.length || 1})</span>
-            </div>
-            {openPeripheriques ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-          </button>
-
-          {openPeripheriques && (
-            <div className="p-3 pt-0 space-y-2 text-xs border-t border-white/5">
-              {peripheriques.length === 0 ? (
-                <div className="bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 flex justify-between items-center">
-                  <span className="text-slate-300">Fournitures d'atelier & recyclage</span>
-                  <span className="font-mono text-amber-400 font-bold">x1</span>
-                </div>
-              ) : (
-                peripheriques.map((p: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center bg-[#0B0F17] p-2.5 rounded-xl border border-white/5">
-                    <span className="text-slate-300">{p.designation}</span>
-                    <span className="font-mono text-amber-400 font-bold">x{p.quantite || 1}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* 3. Main-d'Œuvre */}
-        <div className="bg-[#111827]/80 border border-white/10 rounded-2xl overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setOpenMO(!openMO)}
-            className="w-full p-3.5 flex justify-between items-center text-xs font-bold text-slate-200 hover:bg-white/5 transition cursor-pointer"
-          >
-            <div className="flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-emerald-400" />
-              <span>Main-d'Œuvre & Barèmes Constructeur</span>
-            </div>
-            {openMO ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-          </button>
-
-          {openMO && (
-            <div className="p-3 pt-0 space-y-2 text-xs border-t border-white/5">
-              {mainOeuvre.length === 0 ? (
-                <div className="bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 flex justify-between items-center">
-                  <span className="text-slate-300">Intervention mécanique et essais</span>
-                  <span className="font-mono text-emerald-400 font-bold">1.20 h</span>
-                </div>
-              ) : (
-                mainOeuvre.map((m: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 text-slate-300">
-                    <span>{m.operation}</span>
-                    <span className="font-mono text-emerald-400 font-bold">{m.heures} h</span>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* DÉLAI DE RESTITUTION */}
-      <div className="flex items-center justify-between p-3.5 bg-slate-900/90 border border-white/5 rounded-2xl text-xs">
-        <div className="flex items-center gap-2 text-slate-300">
-          <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-          <span>Restitution estimée :</span>
-        </div>
-        <span className="px-2.5 py-1 bg-cyan-950 border border-cyan-800 text-cyan-300 font-mono font-bold rounded-lg uppercase">
-          Aujourd'hui à 18h00
-        </span>
-      </div>
-
-      {/* BOUTON VALIDATION */}
-      {validated ? (
-        <div className="p-4 bg-emerald-950/40 border border-emerald-500/50 rounded-2xl text-center flex items-center justify-center gap-2 text-emerald-300 text-xs font-bold">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Option validée — Travaux autorisés !
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={handleValidateClient}
-          disabled={isSubmitting}
-          className="w-full py-4 px-6 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.35)] flex items-center justify-center gap-2 cursor-pointer transition-all"
-        >
-          {isSubmitting ? (
-            <>
-              <RefreshCw className="w-4 h-4 animate-spin" /> Transmission de l'accord...
-            </>
-          ) : (
-            <>
-              Valider cette option ({optionType === "circulaire" ? (totalTTC * 0.85).toFixed(2) : totalTTC.toFixed(2)} € TTC)
-            </>
-          )}
-        </button>
-      )}
-    </main>
-  )
 }
