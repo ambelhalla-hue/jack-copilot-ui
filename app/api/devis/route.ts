@@ -8,36 +8,38 @@ export async function POST(req: Request) {
     const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 
-    if (!apiKey) return NextResponse.json({ error: "Clé API manquante." }, { status: 500 })
+    if (!apiKey) {
+      return NextResponse.json({ error: "Clé GEMINI_API_KEY manquante." }, { status: 500 })
+    }
 
     const body = await req.json()
     const { dossierId, vehicle, immat, kilometrage, panne_constatee, options_travaux } = body
 
-    const tauxT1 = 75.00
-    const tauxT2 = 95.00
+    const userPrompt = `Tu es un chiffreur expert après-vente automobile.
+Génère la nomenclature DÉTAILLÉE et COMPLÈTE en JSON STRICT (sans markdown, sans texte autour) pour :
+Véhicule : ${vehicle || "Véhicule Atelier"} (${immat || "N/A"}) - Kilométrage : ${kilometrage || "100000"} km
+Constats mécaniques : ${panne_constatee || "Remplacement pièces"}
+Contrôles atelier signalés : ${options_travaux || "Non spécifié"}
 
-    const userPrompt = `Génère le chiffrage en JSON STRICT (sans markdown, sans texte autour) pour :
-Véhicule : ${vehicle || "Peugeot 308 II"} (${immat || "AA-123-BB"}) - ${kilometrage || "120000"} km
-Panne mécanique : ${panne_constatee || "Remplacement pièces"}
-Contrôles sécurité : ${options_travaux || "Non spécifié"}
+EXIGENCES ABSOLUES DU DEVIS :
+1. EXHAUSTIVITÉ TOTALE : Tu DOIS créer une ligne distincte dans "pieces_principales" pour la panne mécanique ET pour CHAQUE organe noté urgent ou à prévoir (ex: "Batterie 12V", "Jeu de plaquettes de frein avant", "Pneumatiques avant (x2)").
+2. RÈGLE FREINAGE : Si les disques sont à changer, inclus obligatoirement les disques ET les plaquettes neuves associées.
+3. PÉRIPHÉRIQUES : Ajoute dans "peripheriques" tous les fluides, kits visserie, nettoyants ou consommables nécessaires.
+4. MAIN-D'ŒUVRE : Détaille chaque barème d'opération dans "main_oeuvre" avec l'intitulé clair (ex: "Remplacement batterie 12V", "Remplacement disques et plaquettes avant").
 
-RÈGLES :
-1. Crée une ligne dans "pieces_principales" pour la panne ET pour chaque anomalie signalée.
-2. Disques à remplacer = Disques ET plaquettes obligatoires.
-3. Rédige dans "constat_court" UNIQUEMENT la liste des pièces à remplacer (ex: "À remplacer : Amortisseurs AV + Coupelles").
-
-Format JSON attendu :
+Format JSON STRICT attendu :
 {
-  "constat_court": "À remplacer : Amortisseurs avant + Coupelles",
+  "constat_court": "À remplacer : Batterie 12V + Plaquettes AV",
   "pieces_principales": [
-    { "id": "1", "designation": "Jeu d'amortisseurs avant", "ref": "OEM-AMORT", "quantite": 1, "prix_unitaire_ht": 160.00 },
-    { "id": "2", "designation": "Kit coupelles de suspension avant", "ref": "OEM-COUP", "quantite": 1, "prix_unitaire_ht": 45.00 }
+    { "id": "1", "designation": "Batterie 12V conforme constructeur", "ref": "BAT-12V", "quantite": 1 },
+    { "id": "2", "designation": "Jeu de plaquettes de frein avant", "ref": "16 172 834 80", "quantite": 1 }
   ],
   "peripheriques": [
-    { "id": "1", "designation": "Kit visserie neuve & fournitures atelier", "ref": "CONS-01", "quantite": 1, "prix_unitaire_ht": 12.50 }
+    { "id": "1", "designation": "Fournitures atelier & nettoyant dégraissant", "ref": "CONS-01", "quantite": 1 }
   ],
   "main_oeuvre": [
-    { "id": "1", "operation": "Remplacement amortisseurs avant et réglage géométrie", "heures": 2.20, "taux_horaire_ht": ${tauxT2} }
+    { "id": "1", "operation": "Contrôle circuit de charge et remplacement batterie", "heures": 0.5 },
+    { "id": "2", "operation": "Remplacement plaquettes de frein avant", "heures": 0.8 }
   ]
 }`
 
@@ -45,7 +47,7 @@ Format JSON attendu :
 
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -65,62 +67,47 @@ Format JSON attendu :
 
     if (!devis || !Array.isArray(devis.pieces_principales) || devis.pieces_principales.length === 0) {
       devis = {
-        constat_court: panne_constatee || "Remplacement pièces défectueuses",
+        constat_court: panne_constatee || "Remplacement pièces préconisées",
         pieces_principales: [
-          { id: "1", designation: panne_constatee || "Organe principal de rechange", ref: "OEM-STD", quantite: 1, prix_unitaire_ht: 120.00 }
+          { id: "1", designation: panne_constatee || "Organe principal de rechange", ref: "OEM-STD", quantite: 1 }
         ],
         peripheriques: [
-          { id: "1", designation: "Fournitures atelier & consommables", ref: "CONS-01", quantite: 1, prix_unitaire_ht: 8.50 }
+          { id: "1", designation: "Fournitures atelier & consommables", ref: "CONS-01", quantite: 1 }
         ],
         main_oeuvre: [
-          { id: "1", operation: "Main-d'œuvre intervention atelier", heures: 1.20, taux_horaire_ht: tauxT1 }
+          { id: "1", operation: `Intervention : ${panne_constatee || "Atelier"}`, heures: 1.0 }
         ]
-      }
-    }
-
-    const totalPiecesHT = (devis.pieces_principales || []).reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
-    const totalFournituresHT = (devis.peripheriques || []).reduce((acc: number, p: any) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
-    const totalMoHT = (devis.main_oeuvre || []).reduce((acc: number, m: any) => acc + (Number(m.heures || 0) * Number(m.taux_horaire_ht || tauxT1)), 0)
-
-    const totalHT = totalPiecesHT + totalFournituresHT + totalMoHT
-    const tva = totalHT * 0.20
-    const totalTTC = totalHT + tva
-
-    const devisComplet = {
-      ...devis,
-      totaux: {
-        totalPiecesHT,
-        totalFournituresHT,
-        totalMoHT,
-        totalHT,
-        tva,
-        totalTTC,
-        totalTTC_circulaire: totalTTC * 0.78
       }
     }
 
     const constatFinal = devis.constat_court || panne_constatee
 
+    // Écriture directe côté serveur dans Supabase
     if (supabaseUrl && supabaseAnonKey && dossierId) {
-      fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?id=eq.${dossierId}`, {
-        method: "PATCH",
-        headers: {
-          "apikey": supabaseAnonKey,
-          "Authorization": `Bearer ${supabaseAnonKey}`,
-          "Content-Type": "application/json",
-          "Prefer": "return=minimal"
-        },
-        body: JSON.stringify({
-          statut: "devis_genere",
-          constats_technicien: constatFinal,
-          devis_ia: devisComplet
+      try {
+        await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?id=eq.${dossierId}`, {
+          method: "PATCH",
+          headers: {
+            "apikey": supabaseAnonKey,
+            "Authorization": `Bearer ${supabaseAnonKey}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+          },
+          body: JSON.stringify({
+            statut: "devis_genere",
+            constats_technicien: constatFinal,
+            devis_ia: devis,
+            updated_at: new Date().toISOString()
+          })
         })
-      }).catch(err => console.error("Erreur mise a jour Supabase :", err))
+      } catch (err) {
+        console.error("Erreur mise à jour Supabase :", err)
+      }
     }
 
     return NextResponse.json({
       constat_court: constatFinal,
-      devis: devisComplet
+      devis
     })
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Erreur calcul devis." }, { status: 500 })
