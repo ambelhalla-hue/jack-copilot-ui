@@ -153,6 +153,33 @@ export default function AtelierTech() {
         })
 
         const data = await res.json()
+
+        if (!res.ok || data.error) {
+          setMessages(prev => [
+            ...prev,
+            { role: "user", content: "📷 [Photo transmise pour analyse]" },
+            { role: "assistant", content: `⚠️ Erreur Vision : ${data.error || "Échec de l'analyse."}` }
+          ])
+        } else {
+          setMessages(prev => [
+            ...prev,
+            { role: "user", content: "📷 [Photo transmise pour analyse]" },
+            { role: "assistant", content: data.result }
+          ])
+        }
+      } catch (err: any) {
+        setMessages(prev => [
+          ...prev,
+          { role: "assistant", content: "⚠️ Erreur réseau : impossible d'envoyer la photo." }
+        ])
+      } finally {
+        setLoadingVision(false)
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+        const data = await res.json()
         const visionResult = data.result || "Aucun défaut identifié sur l'image."
         
         setMessages(prev => [
