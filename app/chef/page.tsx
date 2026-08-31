@@ -26,14 +26,12 @@ interface PartItem {
   designation: string
   ref: string
   quantite: number
-  prix_unitaire_ht?: number
 }
 
 interface LaborItem {
   id: string
   operation: string
   heures: number
-  taux_horaire_ht?: number
 }
 
 export default function DashboardChefAtelier() {
@@ -43,7 +41,6 @@ export default function DashboardChefAtelier() {
 
   const [alertDevisPret, setAlertDevisPret] = useState<any | null>(null)
   const [alertClientValide, setAlertClientValide] = useState<any | null>(null)
-  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([])
 
   const [mainParts, setMainParts] = useState<PartItem[]>([])
   const [peripherals, setPeripherals] = useState<PartItem[]>([])
@@ -58,26 +55,45 @@ export default function DashboardChefAtelier() {
   const [isTransmitting, setIsTransmitting] = useState(false)
   const [isTransmitted, setIsTransmitted] = useState(false)
 
+  // Synchronisation dynamique du chiffrage selon le dossier sélectionné
   useEffect(() => {
     if (selectedDossier) {
       const devis = selectedDossier.devis_ia
 
-      if (devis && typeof devis === "object") {
-        setMainParts(Array.isArray(devis.pieces_principales) && devis.pieces_principales.length > 0
-          ? devis.pieces_principales 
-          : [{ id: "1", designation: selectedDossier.constats_technicien || "Batterie 12V 70Ah EFB", ref: "16 824 512 80", quantite: 1, prix_unitaire_ht: 135.00 }])
-        
-        setPeripherals(Array.isArray(devis.peripheriques) && devis.peripheriques.length > 0
-          ? devis.peripheriques 
-          : [{ id: "1", designation: "Nettoyant freins & consommables d'atelier", ref: "CONS-01", quantite: 1, prix_unitaire_ht: 7.50 }])
-        
-        setLabor(Array.isArray(devis.main_oeuvre) && devis.main_oeuvre.length > 0
-          ? devis.main_oeuvre 
-          : [{ id: "1", operation: "Remplacement & configuration calculateur", heures: 0.60, taux_horaire_ht: 85.00 }])
+      if (devis) {
+        if (Array.isArray(devis.pieces_principales) && devis.pieces_principales.length > 0) {
+          setMainParts(devis.pieces_principales)
+        } else {
+          setMainParts([
+            { id: "1", designation: `Intervention : ${selectedDossier.constats_technicien || "Pièces à définir"}`, ref: "OE / Adaptable", quantite: 1 }
+          ])
+        }
+
+        if (Array.isArray(devis.peripheriques) && devis.peripheriques.length > 0) {
+          setPeripherals(devis.peripheriques)
+        } else {
+          setPeripherals([
+            { id: "1", designation: "Consommables & petites fournitures d'atelier", ref: "Fournitures", quantite: 1 }
+          ])
+        }
+
+        if (Array.isArray(devis.main_oeuvre) && devis.main_oeuvre.length > 0) {
+          setLabor(devis.main_oeuvre)
+        } else {
+          setLabor([
+            { id: "1", operation: `Main-d'œuvre : ${selectedDossier.constats_technicien || "Remplacement"}`, heures: 1.5 }
+          ])
+        }
       } else {
-        setMainParts([{ id: "1", designation: selectedDossier.constats_technicien || "Batterie 12V", ref: "16 824 512 80", quantite: 1, prix_unitaire_ht: 135.00 }])
-        setPeripherals([{ id: "1", designation: "Fournitures atelier & recyclage", ref: "CONS-01", quantite: 1, prix_unitaire_ht: 7.50 }])
-        setLabor([{ id: "1", operation: "Main-d'œuvre remplacement", heures: 0.60, taux_horaire_ht: 85.00 }])
+        setMainParts([
+          { id: "1", designation: selectedDossier.constats_technicien || "Remplacement pièces préconisées", ref: "OE / Adaptable", quantite: 1 }
+        ])
+        setPeripherals([
+          { id: "1", designation: "Petites fournitures & recyclage", ref: "Norme", quantite: 1 }
+        ])
+        setLabor([
+          { id: "1", operation: "Main-d'œuvre intervention atelier", heures: 1.0 }
+        ])
       }
 
       setCheckedBlocks({ mainParts: false, peripherals: false, labor: false })
@@ -91,18 +107,18 @@ export default function DashboardChefAtelier() {
       if (list && list.length > 0) {
         setDossiers(list)
 
-        const devisAValider = list.find(d => d.statut === "devis_genere" && !dismissedAlerts.includes(`devis_${d.id}`))
+        const devisAValider = list.find(d => d.statut === "devis_genere")
         if (devisAValider && (!selectedDossier || selectedDossier.id !== devisAValider.id)) {
           setAlertDevisPret(devisAValider)
         }
 
-        const accordClient = list.find(d => d.statut === "valide_client" && !dismissedAlerts.includes(`client_${d.id}`))
+        const accordClient = list.find(d => d.statut === "valide_client")
         if (accordClient) {
           setAlertClientValide(accordClient)
         }
 
         if (!selectedDossier) {
-          setSelectedDossier(list[0])
+          setSelectedDossier(devisAValider || list[0])
         } else {
           const updatedCurrent = list.find(d => d.id === selectedDossier.id)
           if (updatedCurrent) setSelectedDossier(updatedCurrent)
@@ -119,30 +135,15 @@ export default function DashboardChefAtelier() {
     refreshDossiers()
     const interval = setInterval(refreshDossiers, 5000)
     return () => clearInterval(interval)
-  }, [dismissedAlerts])
+  }, [])
 
   const totalHeures = labor.reduce((acc, curr) => acc + (Number(curr.heures) || 0), 0)
-  const totalPiecesHT = mainParts.reduce((acc, p) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
-  const totalPeripheralsHT = peripherals.reduce((acc, p) => acc + (Number(p.prix_unitaire_ht || 0) * Number(p.quantite || 1)), 0)
-  const totalMoHT = labor.reduce((acc, l) => acc + (Number(l.heures || 0) * Number(l.taux_horaire_ht || 85)), 0)
-  const totalHT = totalPiecesHT + totalPeripheralsHT + totalMoHT
-  const totalTTC = totalHT * 1.20
 
   const toggleBlock = (blockKey: "mainParts" | "peripherals" | "labor") => {
     setCheckedBlocks(prev => ({ ...prev, [blockKey]: !prev[blockKey] }))
   }
 
   const allValidated = checkedBlocks.mainParts && checkedBlocks.peripherals && checkedBlocks.labor
-
-  const dismissDevisAlert = (id: string) => {
-    setDismissedAlerts(prev => [...prev, `devis_${id}`])
-    setAlertDevisPret(null)
-  }
-
-  const dismissClientAlert = (id: string) => {
-    setDismissedAlerts(prev => [...prev, `client_${id}`])
-    setAlertClientValide(null)
-  }
 
   const updateMainPart = (id: string, field: keyof PartItem, value: any) => {
     setMainParts(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p))
@@ -151,7 +152,7 @@ export default function DashboardChefAtelier() {
     setMainParts(prev => prev.filter(p => p.id !== id))
   }
   const addMainPart = () => {
-    setMainParts(prev => [...prev, { id: Date.now().toString(), designation: "Nouvelle pièce", ref: "OEM-REF", quantite: 1, prix_unitaire_ht: 80.00 }])
+    setMainParts(prev => [...prev, { id: Date.now().toString(), designation: "Nouvelle pièce", ref: "Réf", quantite: 1 }])
   }
 
   const updatePeripheral = (id: string, field: keyof PartItem, value: any) => {
@@ -161,7 +162,7 @@ export default function DashboardChefAtelier() {
     setPeripherals(prev => prev.filter(p => p.id !== id))
   }
   const addPeripheral = () => {
-    setPeripherals(prev => [...prev, { id: Date.now().toString(), designation: "Fourniture / Consommable", ref: "CONS", quantite: 1, prix_unitaire_ht: 5.00 }])
+    setPeripherals(prev => [...prev, { id: Date.now().toString(), designation: "Consommable / Fluide", ref: "Norme", quantite: 1 }])
   }
 
   const updateLabor = (id: string, field: keyof LaborItem, value: any) => {
@@ -171,7 +172,7 @@ export default function DashboardChefAtelier() {
     setLabor(prev => prev.filter(l => l.id !== id))
   }
   const addLabor = () => {
-    setLabor(prev => [...prev, { id: Date.now().toString(), operation: "Opération barémée", heures: 0.50, taux_horaire_ht: 85.00 }])
+    setLabor(prev => [...prev, { id: Date.now().toString(), operation: "Opération barémée", heures: 0.5 }])
   }
 
   const handleTransmitToClient = async () => {
@@ -185,15 +186,7 @@ export default function DashboardChefAtelier() {
           pieces_principales: mainParts,
           peripheriques: peripherals,
           main_oeuvre: labor,
-          totaux: {
-            totalPiecesHT,
-            totalFournituresHT: totalPeripheralsHT,
-            totalMoHT,
-            totalHT,
-            tva: totalHT * 0.20,
-            totalTTC,
-            totalTTC_circulaire: totalTTC * 0.78
-          }
+          total_heures: totalHeures
         }
       })
       setIsTransmitted(true)
@@ -208,31 +201,31 @@ export default function DashboardChefAtelier() {
   return (
     <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-4xl mx-auto p-3 md:p-6 gap-5 selection:bg-blue-500/30">
       
-      {/* POP-UP 1 : ALERTE DEVIS TECHNICIEN */}
+      {/* POP-UP 1 : ALERTE DEVIS TECHNICIEN PRÊT */}
       {alertDevisPret && (
         <div className="fixed inset-x-4 top-5 z-50 max-w-lg mx-auto bg-amber-950 border border-amber-500/80 p-4 rounded-2xl shadow-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4">
           <BellRing className="w-6 h-6 text-amber-400 shrink-0 mt-0.5 animate-bounce" />
           <div className="flex-1">
-            <h4 className="font-bold text-sm text-amber-200">Devis technicien chiffré !</h4>
+            <h4 className="font-bold text-sm text-amber-200">Nouveau devis technicien à vérifier !</h4>
             <p className="text-xs text-amber-300/90 mt-0.5">
-              Véhicule <strong className="text-white">{alertDevisPret.immatriculation}</strong> — Chiffrage disponible pour validation.
+              Véhicule <strong className="text-white">{alertDevisPret.immatriculation}</strong> — Proposition transmise depuis l'atelier.
             </p>
             <div className="flex gap-2 mt-2.5">
               <button
                 onClick={() => {
                   setSelectedDossier(alertDevisPret)
-                  dismissDevisAlert(alertDevisPret.id)
+                  setAlertDevisPret(null)
                 }}
                 className="bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs px-3 py-1.5 rounded-lg transition cursor-pointer"
               >
-                Afficher le chiffrage
+                Vérifier le chiffrage
               </button>
-              <button onClick={() => dismissDevisAlert(alertDevisPret.id)} className="text-xs text-amber-400/80 hover:text-white px-2 py-1.5">
+              <button onClick={() => setAlertDevisPret(null)} className="text-xs text-amber-400/80 hover:text-white px-2 py-1.5">
                 Ignorer
               </button>
             </div>
           </div>
-          <button onClick={() => dismissDevisAlert(alertDevisPret.id)} className="text-amber-400/60 hover:text-white">
+          <button onClick={() => setAlertDevisPret(null)} className="text-amber-400/60 hover:text-white">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -245,24 +238,24 @@ export default function DashboardChefAtelier() {
           <div className="flex-1">
             <h4 className="font-bold text-sm text-emerald-200">Accord Client reçu : Commande de pièces requise !</h4>
             <p className="text-xs text-emerald-300/90 mt-0.5">
-              Le client du véhicule <strong className="text-white">{alertClientValide.immatriculation}</strong> a validé son devis ({alertClientValide.choix_client || "Accord donné"}).
+              Le client du véhicule <strong className="text-white">{alertClientValide.immatriculation}</strong> a validé son devis.
             </p>
             <div className="flex gap-2 mt-2.5">
               <button
                 onClick={() => {
                   setSelectedDossier(alertClientValide)
-                  dismissClientAlert(alertClientValide.id)
+                  setAlertClientValide(null)
                 }}
                 className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs px-3 py-1.5 rounded-lg transition cursor-pointer"
               >
-                Voir les pièces à commander
+                Voir la commande
               </button>
-              <button onClick={() => dismissClientAlert(alertClientValide.id)} className="text-xs text-emerald-400/80 hover:text-white px-2 py-1.5">
+              <button onClick={() => setAlertClientValide(null)} className="text-xs text-emerald-400/80 hover:text-white px-2 py-1.5">
                 Fermer
               </button>
             </div>
           </div>
-          <button onClick={() => dismissClientAlert(alertClientValide.id)} className="text-emerald-400/60 hover:text-white">
+          <button onClick={() => setAlertClientValide(null)} className="text-emerald-400/60 hover:text-white">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -287,7 +280,7 @@ export default function DashboardChefAtelier() {
         </button>
       </header>
 
-      {/* SÉLECTEUR DE VÉHICULE */}
+      {/* SÉLECTEUR DE VÉHICULE (CLIC POUR CHANGER DE DOSSIER) */}
       {dossiers.length > 0 && (
         <section className="flex gap-2 overflow-x-auto pb-1">
           {dossiers.map((d) => (
@@ -344,9 +337,6 @@ export default function DashboardChefAtelier() {
                   <FileText className="w-3 h-3 text-blue-400" /> Statut Dossier
                 </span>
                 <p className="text-cyan-400 font-mono font-bold uppercase">{selectedDossier.statut || "reception"}</p>
-                {selectedDossier.choix_client && (
-                  <p className="text-emerald-300 mt-1">Option choisie : {selectedDossier.choix_client}</p>
-                )}
               </div>
             </div>
           </section>
@@ -356,7 +346,7 @@ export default function DashboardChefAtelier() {
               <CheckCircle2 className="w-12 h-12 text-emerald-400 animate-bounce" />
               <h2 className="text-lg font-bold text-emerald-300">Chiffrage validé par le Chef d'Atelier !</h2>
               <p className="text-xs text-slate-300 max-w-md">
-                Le dossier est synchronisé avec le statut <strong>{selectedDossier.statut}</strong> pour un montant de <strong>{totalTTC.toFixed(2)} € TTC</strong>.
+                Le dossier est synchronisé avec le statut <strong>{selectedDossier.statut}</strong>.
               </p>
               <button
                 onClick={() => setIsTransmitted(false)}
@@ -374,7 +364,7 @@ export default function DashboardChefAtelier() {
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <PackageCheck className={`w-4 h-4 ${checkedBlocks.mainParts ? "text-emerald-400" : "text-blue-400"}`} />
-                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 1 : Pièces Principales ({mainParts.length})</h3>
+                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 1 : Pièces Principales</h3>
                   </div>
                   <button
                     type="button"
@@ -418,13 +408,6 @@ export default function DashboardChefAtelier() {
                         className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 font-mono text-slate-400 text-center"
                         placeholder="Réf."
                       />
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={p.prix_unitaire_ht || 0}
-                        onChange={(e) => updateMainPart(p.id, "prix_unitaire_ht", Number(e.target.value))}
-                        className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 font-mono text-emerald-400 text-right"
-                      />
                       <button type="button" onClick={() => removeMainPart(p.id)} className="p-1.5 text-slate-500 hover:text-rose-400 transition">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -443,7 +426,7 @@ export default function DashboardChefAtelier() {
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <Droplet className={`w-4 h-4 ${checkedBlocks.peripherals ? "text-emerald-400" : "text-amber-400"}`} />
-                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 2 : Périphériques & Fournitures ({peripherals.length})</h3>
+                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 2 : Périphériques & Fournitures</h3>
                   </div>
                   <button
                     type="button"
@@ -487,13 +470,6 @@ export default function DashboardChefAtelier() {
                         className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 font-mono text-slate-400 text-center"
                         placeholder="Norme"
                       />
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={p.prix_unitaire_ht || 0}
-                        onChange={(e) => updatePeripheral(p.id, "prix_unitaire_ht", Number(e.target.value))}
-                        className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 font-mono text-amber-400 text-right"
-                      />
                       <button type="button" onClick={() => removePeripheral(p.id)} className="p-1.5 text-slate-500 hover:text-rose-400 transition">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -512,7 +488,7 @@ export default function DashboardChefAtelier() {
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <Clock className={`w-4 h-4 ${checkedBlocks.labor ? "text-emerald-400" : "text-cyan-400"}`} />
-                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 3 : Main-d'Œuvre & Barèmes ({labor.length})</h3>
+                    <h3 className="font-bold text-xs md:text-sm text-slate-100">Bloc 3 : Main-d'Œuvre & Barèmes</h3>
                   </div>
                   <button
                     type="button"
@@ -568,23 +544,7 @@ export default function DashboardChefAtelier() {
                 </div>
               </section>
 
-              {/* RÉSUMÉ FINANCIER GLOBAL */}
-              <section className="bg-black/60 border border-white/10 rounded-2xl p-4 flex flex-col gap-2 font-mono text-xs">
-                <div className="flex justify-between text-slate-400">
-                  <span>Total Pièces & Fournitures HT :</span>
-                  <span>{(totalPiecesHT + totalPeripheralsHT).toFixed(2)} €</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Total Main-d'œuvre HT :</span>
-                  <span>{totalMoHT.toFixed(2)} €</span>
-                </div>
-                <div className="flex justify-between text-emerald-400 font-bold text-sm pt-2 border-t border-white/10">
-                  <span>Montant Total Estimé TTC :</span>
-                  <span>{totalTTC.toFixed(2)} € TTC</span>
-                </div>
-              </section>
-
-              {/* TRANSMISSION */}
+              {/* TRANSMISSION AU CLIENT */}
               <button
                 onClick={handleTransmitToClient}
                 disabled={!allValidated || isTransmitting}
