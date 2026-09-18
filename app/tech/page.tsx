@@ -7,7 +7,6 @@ import {
   Send, 
   RefreshCw, 
   CheckCircle2, 
-  AlertTriangle, 
   FileText, 
   Layers, 
   Camera, 
@@ -35,12 +34,12 @@ function AtelierTechContent() {
   const [input, setInput] = useState("")
   const [loadingDiag, setLoadingDiag] = useState(false)
   const [loadingVision, setLoadingVision] = useState(false)
-  const [voltage, setVoltage] = useState("Attente de mesure...")
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<any>(null)
 
+  // Checklist sécurité complète d'origine rétablie
   const [quickChecks, setQuickChecks] = useState<Record<string, string>>({
     pneusAV: "bon",
     pneusAR: "bon",
@@ -50,6 +49,35 @@ function AtelierTechContent() {
     disquesAR: "bon",
     batterie: "bon"
   })
+
+  const checkItems = [
+    { key: "pneusAV", label: "Pneus AV" },
+    { key: "pneusAR", label: "Pneus AR" },
+    { key: "plaquettesAV", label: "Plaquettes AV" },
+    { key: "disquesAV", label: "Disques AV" },
+    { key: "plaquettesAR", label: "Plaquettes AR" },
+    { key: "disquesAR", label: "Disques/Tambours AR" },
+    { key: "batterie", label: "Batterie 12V" }
+  ]
+
+  const checkLabels: Record<string, string> = {
+    pneusAV: "Pneus avant",
+    pneusAR: "Pneus arrière",
+    plaquettesAV: "Plaquettes de frein avant",
+    disquesAV: "Disques de frein avant",
+    plaquettesAR: "Plaquettes de frein arrière",
+    disquesAR: "Disques/Tambours arrière",
+    batterie: "Batterie 12V"
+  }
+
+  const getSecurityAnomalies = () => {
+    const list: string[] = []
+    Object.entries(quickChecks).forEach(([key, val]) => {
+      if (val === "urgent") list.push(`${checkLabels[key]} (URGENT / À REMPLACER)`)
+      if (val === "a_prevoir") list.push(`${checkLabels[key]} (À PRÉVOIR)`)
+    })
+    return list
+  }
 
   const [techPhotos, setTechPhotos] = useState<string[]>([])
   const techPhotoInputRef = useRef<HTMLInputElement>(null)
@@ -173,7 +201,7 @@ function AtelierTechContent() {
     }
   }
 
-  // Photo sous caisse / Valise
+  // Prise de photo d'un organe sous le pont ou de la valise
   const handleTechPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -193,7 +221,7 @@ function AtelierTechContent() {
             imageBase64: base64String,
             mimeType: file.type || "image/jpeg",
             vehicleContext: `${vehicle} (${plate}, ${mileage} km)`,
-            userNotes: symptoms || dtc ? `DTC: ${dtc} | ${symptoms}` : "Photo sous le pont"
+            userNotes: symptoms || dtc ? `DTC: ${dtc} | ${symptoms}` : "Photo sous le pont pour analyse"
           })
         })
 
@@ -236,18 +264,19 @@ function AtelierTechContent() {
     setTechPhotos(prev => prev.filter((_, i) => i !== idx))
   }
 
-  const handleMeasure = (conform: boolean) => {
-    if (conform) {
-      setVoltage("5.02 V (Conforme)")
-      handleSend("Mesure conforme (5V). Faisceau et ligne validés. Que contrôle-t-on ensuite ?")
-    } else {
-      setVoltage("0.04 V (Non conforme)")
-      handleSend("Mesure non conforme (0V). Ligne coupée ou masse absente. Où chercher la cause commune ?")
-    }
-  }
-
+  // Concaténation de la panne et des contrôles de sécurité
   const handleGenerateAndSendToChef = async () => {
-    const basePanne = panneConstatee.trim() || (dtc ? `Traitement défaut ${dtc}` : "Entretien et contrôles atelier")
+    const anomalies = getSecurityAnomalies()
+    let basePanne = panneConstatee.trim()
+    if (!basePanne || basePanne.length < 2) {
+      basePanne = dtc ? `Traitement défaut ${dtc}` : "Entretien et contrôles atelier"
+    }
+
+    let constatComplet = basePanne
+    if (anomalies.length > 0) {
+      constatComplet += " | Contrôles sécurité : " + anomalies.join(" + ")
+    }
+
     setLoadingDevis(true)
 
     try {
@@ -259,8 +288,8 @@ function AtelierTechContent() {
           vehicle,
           immat: plate,
           kilometrage: mileage,
-          panne_constatee: basePanne,
-          options_travaux: "Contrôles atelier réalisés"
+          panne_constatee: constatComplet,
+          options_travaux: anomalies.length > 0 ? anomalies.join(", ") : "Tous les contrôles sont conformes"
         })
       })
 
@@ -269,7 +298,7 @@ function AtelierTechContent() {
         if (dossierId) {
           await updateDossierStatusAndData(dossierId, {
             statut: "devis_genere",
-            constats_technicien: basePanne,
+            constats_technicien: constatComplet,
             devis_ia: data.devis
           })
         }
@@ -309,7 +338,7 @@ function AtelierTechContent() {
         </span>
       </header>
 
-      {/* 1. CONTRÔLES SÉCURITÉ */}
+      {/* 1. CONTRÔLES EXPRESS SÉCURITÉ COMPLETS */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -318,30 +347,25 @@ function AtelierTechContent() {
           <span className="text-[11px] text-slate-500">Cliquez pour alterner</span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-          {[
-            { key: "pneusAV", label: "Pneus AV" },
-            { key: "plaquettesAV", label: "Plaquettes AV" },
-            { key: "disquesAV", label: "Disques AV" },
-            { key: "batterie", label: "Batterie 12V" }
-          ].map(item => {
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 text-xs">
+          {checkItems.map(item => {
             const val = quickChecks[item.key]
             return (
-              <div key={item.key} className="bg-[#0B0F17] p-2 rounded-xl border border-white/5 flex flex-col justify-between gap-1.5">
-                <span className="text-[11px] text-slate-300 font-medium">{item.label}</span>
+              <div key={item.key} className="bg-[#0B0F17] p-2.5 rounded-xl border border-white/5 flex flex-col justify-between gap-2">
+                <span className="text-[11px] text-slate-300 font-medium leading-tight">{item.label}</span>
                 <button
                   type="button"
                   onClick={() => {
                     const nextVal = val === "bon" ? "a_prevoir" : val === "a_prevoir" ? "urgent" : "bon"
                     setQuickChecks(prev => ({ ...prev, [item.key]: nextVal }))
                   }}
-                  className={`py-1 px-2 rounded text-[10px] font-mono font-bold uppercase transition text-center ${
+                  className={`py-1.5 px-2 rounded text-[10px] font-mono font-bold uppercase transition text-center cursor-pointer ${
                     val === "bon" ? "bg-emerald-950/60 text-emerald-400 border border-emerald-800" :
                     val === "a_prevoir" ? "bg-amber-950/60 text-amber-400 border border-amber-800" :
                     "bg-rose-950/60 text-rose-400 border border-rose-800 animate-pulse"
                   }`}
                 >
-                  {val === "bon" ? "✓ Bon" : val === "a_prevoir" ? "⚠ À prévoir" : "✖ Urgent"}
+                  {val === "bon" ? "✓ Conforme" : val === "a_prevoir" ? "⚠ À prévoir" : "✖ Urgent"}
                 </button>
               </div>
             )
@@ -349,7 +373,7 @@ function AtelierTechContent() {
         </div>
       </section>
 
-      {/* 2. DIAGNOSTIC, VISION & MESURES */}
+      {/* 2. DIAGNOSTIC JACK & VISION DIRECTE (MULTIMÈTRE RETIRÉ) */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -372,7 +396,7 @@ function AtelierTechContent() {
               className="px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 rounded-xl text-xs text-cyan-300 font-bold flex items-center gap-2 cursor-pointer transition"
             >
               {loadingVision ? <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" /> : <Camera className="w-4 h-4 text-cyan-400" />}
-              {loadingVision ? "Analyse Jack Vision..." : "Photo Pièce / Valise"}
+              {loadingVision ? "Analyse en cours..." : "Photo Pièce / Valise"}
             </button>
           </div>
         </div>
@@ -407,11 +431,10 @@ function AtelierTechContent() {
             value={symptoms} 
             onChange={e => setSymptoms(e.target.value)} 
             className="bg-[#0B0F17] border border-slate-700 rounded-xl px-3 py-2 text-xs flex-1 text-slate-200" 
-            placeholder="Symptômes ou pièce suspectée..."
+            placeholder="Symptômes relevés..."
           />
         </div>
 
-        {/* Historique du chat avec Jack */}
         <div className="min-h-[140px] max-h-[240px] overflow-y-auto bg-[#0B0F17]/80 rounded-xl p-3 border border-white/5 flex flex-col gap-2.5 text-xs">
           {messages.length === 0 ? (
             <div className="text-slate-500 text-center my-auto">
@@ -437,29 +460,6 @@ function AtelierTechContent() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Multimètre rapide */}
-        <div className="grid grid-cols-3 gap-2 items-center">
-          <div className="bg-black border border-slate-800 rounded-xl p-2 text-center">
-            <span className="text-[10px] text-slate-500 block">Multimètre</span>
-            <div className="font-mono text-sm text-emerald-400 font-bold">{voltage}</div>
-          </div>
-          <button 
-            type="button" 
-            onClick={() => handleMeasure(true)} 
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" /> 5V Conforme
-          </button>
-          <button 
-            type="button" 
-            onClick={() => handleMeasure(false)} 
-            className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer"
-          >
-            <AlertTriangle className="w-3.5 h-3.5" /> Non Conforme
-          </button>
-        </div>
-
-        {/* Champ de saisie et dictée vocale */}
         <div className="flex gap-2">
           <input 
             type="text" 
@@ -489,11 +489,18 @@ function AtelierTechContent() {
         </div>
       </section>
 
-      {/* 3. CONSTAT & TRANSMISSION */}
+      {/* 3. CONSTAT & TRANSMISSION AU CHEF */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-          <FileText className="w-4 h-4 text-emerald-400" /> 3. Constat & Transmission au Chef
-        </h2>
+        <div className="flex justify-between items-center">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <FileText className="w-4 h-4 text-emerald-400" /> 3. Constat Final & Transmission au Chef
+          </h2>
+          {getSecurityAnomalies().length > 0 && (
+            <span className="text-[10px] font-mono px-2 py-0.5 bg-amber-950/60 border border-amber-800 text-amber-300 rounded">
+              +{getSecurityAnomalies().length} alerte(s) sécurité incluse(s)
+            </span>
+          )}
+        </div>
 
         {devisTransmis ? (
           <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-xl text-center flex flex-col items-center gap-2">
@@ -501,7 +508,7 @@ function AtelierTechContent() {
             <h3 className="font-bold text-xs text-emerald-300">Dossier transmis à la Tour de Contrôle !</h3>
             <button 
               onClick={() => setDevisTransmis(false)} 
-              className="text-[11px] text-slate-400 hover:text-white underline"
+              className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
             >
               Modifier ou compléter le constat
             </button>
@@ -516,20 +523,29 @@ function AtelierTechContent() {
               placeholder="Constat pré-rempli automatiquement dès que Jack valide une pièce ou un code..."
             />
 
+            {getSecurityAnomalies().length > 0 && (
+              <div className="p-2.5 bg-slate-900/80 rounded-xl border border-amber-500/20 text-[11px] text-amber-300/90 flex flex-col gap-1 font-mono">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Inclus automatiquement dans le devis :</span>
+                {getSecurityAnomalies().map((ano, i) => (
+                  <span key={i}>• {ano}</span>
+                ))}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={handleGenerateAndSendToChef}
               disabled={loadingDevis}
-              className="py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg cursor-pointer"
+              className="py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg cursor-pointer transition"
             >
               {loadingDevis ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Génération du chiffrage...
+                  Génération du chiffrage global...
                 </>
               ) : (
                 <>
-                  Générer le devis & Transmettre au Chef
+                  Générer le devis complet & Transmettre au Chef
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
