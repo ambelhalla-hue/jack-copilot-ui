@@ -85,3 +85,24 @@ export async function updateDossierStatusAndData(id: string, updates: Record<str
 
   return await res.json()
 }
+// Sauvegarde incrémentale de l'historique du chat Jack
+export async function saveDossierChatHistory(id: string, messages: { role: string; content: string }[]) {
+  return await updateDossierStatusAndData(id, {
+    chat_history: messages
+  })
+}
+
+// Ajout d'une intervention complémentaire post-transmission sans recréer de dossier
+export async function appendConstatToDossier(id: string, nouveauConstat: string) {
+  const current = await getDossierById(id)
+  if (!current) throw new Error("Dossier introuvable.")
+
+  const updatedConstats = current.constats_technicien 
+    ? `${current.constats_technicien} | [Avenant] ${nouveauConstat}`
+    : nouveauConstat
+
+  return await updateDossierStatusAndData(id, {
+    constats_technicien: updatedConstats,
+    statut: "devis_a_revalider"
+  })
+}
