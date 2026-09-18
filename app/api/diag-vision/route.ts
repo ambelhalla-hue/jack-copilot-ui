@@ -6,7 +6,7 @@ export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: "Clé GEMINI_API_KEY non configurée dans Vercel." }, { status: 500 })
+      return NextResponse.json({ error: "Clé GEMINI_API_KEY non configurée." }, { status: 500 })
     }
 
     const body = await req.json()
@@ -18,28 +18,38 @@ export async function POST(req: Request) {
 
     const cleanBase64 = imageBase64.includes(",") ? imageBase64.split(",")[1] : imageBase64
 
-    const systemInstruction = `Tu es Jack, Chef d'Atelier expert. Tu analyses une photo d'écran de valise de diagnostic OBD (Diagbox, Launch, Autel), de tableau de bord ou de composant.
+    const systemInstruction = `Tu es Jack, Chef d'Atelier expert avec 20 ans de métier.
+Tu analyses une photo transmise par un mécanicien sous le pont.
+La photo peut être :
+- Une pièce mécanique défectueuse (fuite d'huile/LDR, fissure, courroie craquelée, disque/plaquette usé, jeu, rouille).
+- L'écran d'une valise de diagnostic (Diagbox, KDS Kia, Launch, Autel) ou du combiné d'instruments.
 
-MISSION :
-1. Extrais TOUS les codes défauts (DTC) visibles et leurs libellés.
-2. Si plusieurs DTC sont présents, fais le TRI PAR CAUSE COMMUNE (masse, alim 5V, fusible, réseau CAN, faisceau frotté). Isole la panne racine.
-3. Rédige une réponse radicalement concise selon ce format strict :
+DIRECTIVES D'ATELIER :
+1. Si c'est une pièce ou un organe mécanique usé / qui fuit :
+   - Identifie immédiatement l'organe précis et la nature du problème (usure prononcée, fuite joint spi/raccord, craquelure).
+   - Valide le composant HS sans protocole inutile.
+   - Indique la conséquence directe et les périphériques obligatoires à remplacer (joints, vis, fluide).
+   - Structure ta réponse :
+     ORGANES IDENTIFIÉS : [Nom précis de la pièce]
+     ANOMALIE CONSTATÉE : [Ce qui est visible sur la photo]
+     CONCLUSION : [Pièce à remplacer / intervention requise]
+     À PRÉVOIR : [Fournitures et joints associés]
 
-CODES DÉTECTÉS : [Liste des codes extraits séparés par des virgules, ex: P0234, P0100]
-SYNTHÈSE : [1 phrase résumant l'élément commun]
-CAUSES :
-- P1 : [Cause racine prioritaire]
-- P2 : [Cause secondaire]
-TEST : [Action de mesure physique unique et précise]
-ATTENDU : [Valeur seuil / signal cible]`
+2. Si c'est un écran de valise (DTC) :
+   - Extrais tous les codes défauts visibles (ex: P0234, P0100).
+   - Fais le tri par cause racine commune (masse, ligne 5V, fusible, réseau CAN).
+   - Structure ta réponse :
+     CODES DÉTECTÉS : [Liste des codes]
+     SYNTHÈSE : [Cause racine commune]
+     TEST : [Action de mesure physique unique]
+     ATTENDU : [Valeur seuil]`
 
-    const promptText = `Véhicule : ${vehicleContext || "Non spécifié"}
-Notes : ${userNotes || "Analyse requise"}
-Analyse cette capture d'écran et effectue le tri des défauts multiples.`
+    const promptText = `Véhicule : ${vehicleContext || "Véhicule atelier"}
+Notes mécano : ${userNotes || "Analyse visuelle demandée"}
+Analyse cette image technique et livre le verdict d'atelier direct.`
 
-    // APPEL MODÈLE OFFICIEL REQUIS PAR GOOGLE : gemini-3.6-flash
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -60,7 +70,7 @@ Analyse cette capture d'écran et effectue le tri des défauts multiples.`
             }
           ],
           generationConfig: {
-            maxOutputTokens: 300,
+            maxOutputTokens: 350,
             temperature: 0.1
           }
         })
@@ -69,13 +79,13 @@ Analyse cette capture d'écran et effectue le tri des défauts multiples.`
 
     const data = await response.json()
     if (!response.ok || data.error) {
-      return NextResponse.json({ error: data.error?.message || "Erreur de l'API Google." }, { status: 500 })
+      return NextResponse.json({ error: data.error?.message || "Erreur de traitement vision." }, { status: 500 })
     }
 
-    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Diagnostic impossible."
+    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Diagnostic visuel impossible."
     return NextResponse.json({ result: resultText })
 
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Erreur serveur Vercel." }, { status: 500 })
+    return NextResponse.json({ error: error?.message || "Erreur serveur vision." }, { status: 500 })
   }
 }
