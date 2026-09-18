@@ -1,53 +1,27 @@
-import { Analytics } from '@vercel/analytics/next'
-import type { Metadata, Viewport } from 'next'
-import { Inter, JetBrains_Mono } from 'next/font/google'
-import './globals.css'
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import "./globals.css"
+import Navbar from "@/components/navbar"
 
-const _inter = Inter({ subsets: ['latin'] })
-const _jetbrainsMono = JetBrains_Mono({ subsets: ['latin'] })
+const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: 'Jack Copilot — Assistant de diagnostic automobile',
-  description:
-    "Copilote IA de diagnostic pour mécaniciens automobiles : lecture de codes DTC, tests guidés et mesures électriques pas à pas.",
-  generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
-}
-
-export const viewport: Viewport = {
-  colorScheme: 'dark',
-  themeColor: '#0b1020',
-  userScalable: false,
-  width: 'device-width',
-  initialScale: 1,
+  title: "Jack Copilot - SaaS Atelier",
+  description: "Copilote d'atelier connecté pour mécaniciens, chefs et clients",
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
-    <html lang="fr" className="bg-background">
-      <body className="font-sans antialiased">
-        {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+    <html lang="fr">
+      <body className={`${inter.className} bg-[#0B0F17] text-slate-100 min-h-screen flex flex-col`}>
+        <Navbar />
+        <div className="flex-1">
+          {children}
+        </div>
       </body>
     </html>
   )
