@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { 
   Wrench, 
@@ -19,7 +19,7 @@ import {
 } from "lucide-react"
 import { getAllDossiers, getDossierById, updateDossierStatusAndData, saveDossierChatHistory } from "@/lib/supabase"
 
-export default function AtelierTech() {
+function AtelierTechContent() {
   const searchParams = useSearchParams()
   const requestedDossierId = searchParams?.get("dossierId")
 
@@ -58,7 +58,7 @@ export default function AtelierTech() {
   const [loadingDevis, setLoadingDevis] = useState(false)
   const [devisTransmis, setDevisTransmis] = useState(false)
 
-  // Chargement du dossier (soit via l'URL, soit le dossier actif le plus récent)
+  // Chargement du dossier
   useEffect(() => {
     const loadDossier = async () => {
       try {
@@ -108,7 +108,7 @@ export default function AtelierTech() {
 
         recognition.onresult = (event: any) => {
           let currentTranscript = ""
-          for (let i = event.resultIndex; i < event.results.length; i++) {
+          for (let i = event.resultsIndex || 0; i < event.results.length; i++) {
             currentTranscript += event.results[i][0].transcript
           }
           if (currentTranscript.trim()) {
@@ -133,7 +133,7 @@ export default function AtelierTech() {
     }
   }
 
-  // Envoi de message texte à Jack
+  // Envoi de message à Jack
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim()) return
     const newMessages = [...messages, { role: "user", content: textToSend }]
@@ -158,12 +158,10 @@ export default function AtelierTech() {
       const updatedMessages = [...newMessages, { role: "assistant", content: assistantReply }]
       setMessages(updatedMessages)
 
-      // Persistance de l'historique dans Supabase
       if (dossierId) {
         await saveDossierChatHistory(dossierId, updatedMessages).catch(() => {})
       }
 
-      // Pré-remplissage du constat si une anomalie est validée
       if (!data.error && data.response && !panneConstatee) {
         const firstLine = data.response.split("\n").find((l: string) => l.trim().length > 5) || ""
         setPanneConstatee(firstLine.replace(/[*#]/g, "").slice(0, 150))
@@ -175,7 +173,7 @@ export default function AtelierTech() {
     }
   }
 
-  // Prise de photo d'un organe sous le pont ou de la valise
+  // Photo sous caisse / Valise
   const handleTechPhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -195,20 +193,18 @@ export default function AtelierTech() {
             imageBase64: base64String,
             mimeType: file.type || "image/jpeg",
             vehicleContext: `${vehicle} (${plate}, ${mileage} km)`,
-            userNotes: symptoms || dtc ? `DTC: ${dtc} | ${symptoms}` : "Photo prise sous le pont pour analyse de panne"
+            userNotes: symptoms || dtc ? `DTC: ${dtc} | ${symptoms}` : "Photo sous le pont"
           })
         })
 
         const data = await res.json()
         const visionText = data.result || "Aucune anomalie visible."
 
-        // Mise à jour de l'affichage du champ DTC si des codes sont extraits
         const dtcMatch = visionText.match(/CODES DÉTECTÉS\s*:\s*([^\n\r]+)/i)
         if (dtcMatch && dtcMatch[1]) {
           setDtc(dtcMatch[1].trim())
         }
 
-        // Auto-remplissage immédiat du constat avec l'analyse de la pièce
         const organeMatch = visionText.match(/ORGANES IDENTIFIÉS\s*:\s*([^\n\r]+)/i)
         const anomalieMatch = visionText.match(/ANOMALIE CONSTATÉE\s*:\s*([^\n\r]+)/i)
         if (organeMatch && anomalieMatch) {
@@ -228,7 +224,7 @@ export default function AtelierTech() {
           await saveDossierChatHistory(dossierId, newMessages).catch(() => {})
         }
       } catch {
-        setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Erreur lors de l'analyse visuelle." }])
+        setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Erreur analyse visuelle." }])
       } finally {
         setLoadingVision(false)
       }
@@ -353,14 +349,13 @@ export default function AtelierTech() {
         </div>
       </section>
 
-      {/* 2. DIAGNOSTIC, VISION PIÈCES & MESURES */}
+      {/* 2. DIAGNOSTIC, VISION & MESURES */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <div className="flex justify-between items-center">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
             <Layers className="w-4 h-4 text-blue-400" /> 2. Diagnostic & Mesures Jack
           </h2>
           
-          {/* BOUTON PRISE DE PHOTO PIÈCE / VALISE */}
           <div className="flex items-center gap-2">
             <input
               type="file"
@@ -382,7 +377,6 @@ export default function AtelierTech() {
           </div>
         </div>
 
-        {/* Galerie des clichés pris sous le pont */}
         {techPhotos.length > 0 && (
           <div className="flex gap-2 overflow-x-auto py-1">
             {techPhotos.map((url, i) => (
@@ -495,7 +489,7 @@ export default function AtelierTech() {
         </div>
       </section>
 
-      {/* 3. CONSTAT & TRANSMISSION AU CHEF */}
+      {/* 3. CONSTAT & TRANSMISSION */}
       <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
           <FileText className="w-4 h-4 text-emerald-400" /> 3. Constat & Transmission au Chef
@@ -544,5 +538,17 @@ export default function AtelierTech() {
         )}
       </section>
     </main>
+  )
+}
+
+export default function AtelierTech() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0B0F17] flex items-center justify-center text-cyan-400 font-mono text-sm gap-2">
+        <RefreshCw className="w-5 h-5 animate-spin" /> Chargement de l'Atelier...
+      </div>
+    }>
+      <AtelierTechContent />
+    </Suspense>
   )
 }
