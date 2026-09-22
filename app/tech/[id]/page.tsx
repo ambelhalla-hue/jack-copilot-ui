@@ -117,44 +117,72 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
     window.speechSynthesis.speak(utterance)
   }
 
-  // Micro : déclenchement avec demande de permission native
-  const toggleListening = () => {
+ // Micro avec déblocage permission Android / Chrome et écoute continue
+  const toggleListening = async () => {
     if (typeof window === "undefined") return
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SpeechRecognition) {
-      alert("La dictée vocale n'est pas supportée par ce navigateur mobile (utilisez Google Chrome).")
+      alert("La reconnaissance vocale n'est pas disponible sur ce navigateur. Utilisez Chrome.")
       return
     }
 
     if (isListening) {
-      recognitionRef.current?.stop()
+      try {
+        recognitionRef.current?.stop()
+      } catch (e) {
+        console.error(e)
+      }
       setIsListening(false)
       return
     }
 
     try {
+      // 1. Débloque le micro au niveau d'Android
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        await navigator.mediaDevices.getUserMedia({ audio: true })
+      }
+
+      // 2. Initialise le moteur vocal
       const recognition = new SpeechRecognition()
       recognition.lang = "fr-FR"
+      recognition.continuous = true
       recognition.interimResults = false
-      recognition.continuous = false
 
-      recognition.onstart = () => setIsListening(true)
+      recognition.onstart = () => {
+        setIsListening(true)
+      }
+
       recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript
-        setInput(prev => (prev ? `${prev} ` : "") + transcript)
+        let transcript = ""
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            transcript += event.results[i][0].transcript
+          }
+        }
+        if (transcript.trim()) {
+          setInput(prev => (prev ? `${prev.trim()} ` : "") + transcript.trim())
+        }
+      }
+
+      recognition.onerror = (event: any) => {
+        console.error("Erreur micro:", event.error)
         setIsListening(false)
       }
-      recognition.onerror = () => setIsListening(false)
-      recognition.onend = () => setIsListening(false)
+
+      recognition.onend = () => {
+        setIsListening(false)
+      }
 
       recognitionRef.current = recognition
       recognition.start()
-    } catch {
+    } catch (err) {
+      console.error("Accès micro refusé :", err)
+      alert("Veuillez autoriser l'accès au micro dans les paramètres du navigateur.")
       setIsListening(false)
     }
   }
-
+  
   // Prise de photo directe
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
