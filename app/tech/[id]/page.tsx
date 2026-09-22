@@ -41,8 +41,9 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
 
   // Reconnaissance et Synthèse Vocale
   const [isListening, setIsListening] = useState(false)
-  const [speechEnabled, setSpeechEnabled] = useState(true)
-  const recognitionRef = useRef<any>(null)
+const [speechEnabled, setSpeechEnabled] = useState(true)
+const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+const audioChunksRef = useRef<Blob[]>([])
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -117,95 +118,77 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
     window.speechSynthesis.speak(utterance)
   }
 
- // Micro avec déblocage permission Android / Chrome et écoute continue
+ // Enregistreur universel compatible Samsung Internet, Chrome, Safari, etc.
   const toggleListening = async () => {
     if (typeof window === "undefined") return
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      alert("La reconnaissance vocale n'est pas disponible sur ce navigateur. Utilisez Chrome.")
-      return
-    }
-
     if (isListening) {
-      try {
-        recognitionRef.current?.stop()
-      } catch (e) {
-        console.error(e)
+      // Fin de la dictée : on stoppe l'enregistrement audio
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop()
       }
       setIsListening(false)
       return
     }
 
     try {
-      // 1. Débloque le micro au niveau d'Android
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      audioChunksRef.current = []
+
+      // Détection du format audio supporté par le navigateur
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : ""
+
+      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
       }
 
-      // 2. Initialise le moteur vocal
-      const recognition = new SpeechRecognition()
-      recognition.lang = "fr-FR"
-      recognition.continuous = true
-      recognition.interimResults = false
+      mediaRecorder.onstop = async () => {
+        // Extinction du voyant micro du smartphone
+        stream.getTracks().forEach((track) => track.stop())
 
-      recognition.onstart = () => {
-        setIsListening(true)
-      }
+        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" })
+        const reader = new FileReader()
 
-      recognition.onresult = (event: any) => {
-        let transcript = ""
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            transcript += event.results[i][0].transcript
+        reader.onloadend = async () => {
+          const base64Audio = reader.result as string
+          try {
+            setInput("Transcription en cours...")
+            const res = await fetch("/api/transcribe", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                audioBase64: base64Audio,
+                mimeType: mediaRecorder.mimeType || "audio/webm"
+              })
+            })
+            const data = await res.json()
+            setInput(data.text || "")
+          } catch {
+            setInput("")
+            alert("Erreur lors de la transcription vocale.")
           }
         }
-        if (transcript.trim()) {
-          setInput(prev => (prev ? `${prev.trim()} ` : "") + transcript.trim())
-        }
+
+        reader.readAsDataURL(audioBlob)
       }
 
-      recognition.onerror = (event: any) => {
-        console.error("Erreur micro:", event.error)
-        setIsListening(false)
-      }
-
-      recognition.onend = () => {
-        setIsListening(false)
-      }
-
-      recognitionRef.current = recognition
-      recognition.start()
+      mediaRecorder.start()
+      setIsListening(true)
     } catch (err) {
-      console.error("Accès micro refusé :", err)
-      alert("Veuillez autoriser l'accès au micro dans les paramètres du navigateur.")
+      console.error("Erreur micro:", err)
+      alert("Accès micro refusé. Veuillez vérifier les autorisations de votre navigateur.")
       setIsListening(false)
     }
   }
-  
-  // Prise de photo directe
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setLoadingVision(true)
-    const reader = new FileReader()
-    reader.onloadend = async () => {
-      const base64String = reader.result as string
-      try {
-        setMessages(prev => [...prev, { role: "user", content: "📷 [Photo transmise pour analyse sous le pont]" }])
-
-        const res = await fetch("/api/diag-vision", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageBase64: base64String,
-            mimeType: file.type || "image/jpeg",
-            vehicleContext: `${vehicle} (${plate}) - ${mileage} km`,
-            userNotes: input || "Analyse de la pièce ou écran OBD"
-          })
-        })
-
         const data = await res.json()
         const visionReply = data.result || data.response || "Aucune anomalie détectée sur l'image."
 
