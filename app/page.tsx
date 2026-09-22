@@ -299,6 +299,36 @@ export default function MobileCockpit() {
               <span>Fournitures & consommables</span>
               <span className="text-emerald-400 font-bold">18,50 €</span>
             </div>
+            
+            {/* P4 : AUDIT SÉCURITÉ DÉTERMINISTE */}
+            {(() => {
+              const detectedParts = messages
+                .filter(m => m.role === "assistant")
+                .map(m => extractTag(m.content, "PIECE_CIBLE") || "")
+                .filter(Boolean)
+              
+              const audit = auditInterventionSafety(detectedParts)
+              if (audit.warnings.length === 0 && audit.mandatoryParts.length === 0) return null
+
+              return (
+                <div className="p-2.5 bg-rose-950/40 border border-rose-800/80 rounded-xl space-y-1.5">
+                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block">
+                    Garde-fou Sécurité Métier
+                  </span>
+                  {audit.warnings.map((w, idx) => (
+                    <p key={idx} className="text-[11px] text-rose-300 font-sans leading-tight">
+                      • {w}
+                    </p>
+                  ))}
+                  {audit.mandatoryParts.map((p, idx) => (
+                    <div key={idx} className="flex justify-between items-center text-[10px] text-amber-300 font-mono pt-1">
+                      <span>+ {p.designation}</span>
+                      <span className="bg-amber-950 px-1.5 py-0.5 rounded border border-amber-800">Inclus d'office</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
             <button className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-sans font-bold text-xs">
               Partager Devis Client (PDF / SMS)
             </button>
