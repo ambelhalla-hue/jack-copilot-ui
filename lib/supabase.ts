@@ -1,16 +1,29 @@
-const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "")
+import { createClient } from "@supabase/supabase-js"
+
+const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+const supabaseUrl = rawUrl.replace(/\/+$/, "")
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 
-function getHeaders(extraHeaders: Record<string, string> = {}) {
-  return {
-    "apikey": supabaseAnonKey,
-    "Authorization": `Bearer ${supabaseAnonKey}`,
-    "Content-Type": "application/json",
-    ...extraHeaders
-  }
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+export interface DossierAtelier {
+  id?: string
+  user_id?: string
+  immatriculation: string
+  vin?: string
+  kilometrage: number
+  statut?: string
+  photos_tour_vehicule?: string[]
+  constats_technicien?: string
+  chat_history?: any[]
+  devis_ia?: any
+  created_at?: string
+  updated_at?: string
 }
 
-// 1. Insertion d'un dossier depuis la réception CCS
+/**
+ * Insère un nouveau dossier en lui attribuant automatiquement le user_id connecté
+ */
 export async function insertDossierAtelier(data: {
   immatriculation: string
   vin?: string
@@ -19,111 +32,88 @@ export async function insertDossierAtelier(data: {
   photos_tour_vehicule?: string[]
   constats_technicien?: string
 }) {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Variables Supabase non configurées sur Vercel.")
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const payload = {
+    ...data,
+    user_id: user?.id || null,
+    statut: data.statut || "en_diagnostic",
+    updated_at: new Date().toISOString()
   }
 
-  const res = await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier`, {
-    method: "POST",
-    headers: getHeaders({ "Prefer": "return=representation" }),
-    body: JSON.stringify(data)
-  })
+  const { data: inserted, error } = await supabase
+    .from("dossiers_atelier")
+    .insert([payload])
+    .select()
+    .single()
 
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}))
-    throw new Error(errData.message || `Erreur Supabase HTTP ${res.status}`)
+  if (error) {
+    throw new Error(error.message)
   }
 
-  return await res.json()
+  return inserted
 }
 
-// 2. Récupération de tous les dossiers
-export async function getAllDossiers() {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error("Variables Supabase non configurées.")
+/**
+ * Récupère les dossiers de l'utilisateur connecté selon le statut demandé
+ */
+export async function getDossiersByStatut(type: "en_cours" | "archives") {
+  let query = supabase
+    .from("dossiers_atelier")
+    .select("*")
+    .order("created_at", { ascending: false })
+
+  if (type === "en_cours") {
+    query = query.neq("statut", "termine").neq("statut", "cloture")
+  } else {
+    query = query.in("statut", ["termine", "cloture"])
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error("Erreur récupération dossiers:", error.message)
     return []
   }
 
-  try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?select=*&order=created_at.desc`, {
-      method: "GET",
-      headers: getHeaders(),
-      cache: "no-store"
-    })
-
-    if (!res.ok) {
-      console.error("Erreur HTTP getAllDossiers", res.status)
-      return []
-    }
-
-    return await res.json()
-  } catch (err) {
-    console.error("Erreur getAllDossiers :", err)
-    return []
-  }
+  return data || []
 }
 
-// 3. Récupération d'un dossier unique par son ID (Requis par /dossier/[id])
+/**
+ * Récupère un dossier spécifique par son ID (sécurisé par RLS)
+ */
 export async function getDossierById(id: string) {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Variables Supabase non configurées.")
+  const { data, error } = await supabase
+    .from("dossiers_atelier")
+    .select("*")
+    .eq("id", id)
+    .single()
+
+  if (error) {
+    console.error("Erreur récupération dossier par ID:", error.message)
+    return null
   }
 
-  const res = await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?id=eq.${id}&select=*`, {
-    method: "GET",
-    headers: getHeaders(),
-    cache: "no-store"
-  })
-
-  if (!res.ok) {
-    throw new Error(`Erreur Supabase HTTP ${res.status}`)
-  }
-
-  const data = await res.json()
-  return data?.[0] || null
+  return data
 }
 
-// 4. Mise à jour d'un dossier
-export async function updateDossierStatusAndData(id: string, updates: Record<string, any>) {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Variables Supabase non configurées.")
-  }
-
-  const res = await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?id=eq.${id}`, {
-    method: "PATCH",
-    headers: getHeaders({ "Prefer": "return=representation" }),
-    body: JSON.stringify({
+/**
+ * Met à jour un dossier existant
+ */
+export async function updateDossierStatusAndData(id: string, updates: Partial<DossierAtelier>) {
+  const { data, error } = await supabase
+    .from("dossiers_atelier")
+    .update({
       ...updates,
       updated_at: new Date().toISOString()
     })
-  })
+    .eq("id", id)
+    .select()
+    .single()
 
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}))
-    throw new Error(errData.message || `Erreur Supabase PATCH HTTP ${res.status}`)
+  if (error) {
+    throw new Error(error.message)
   }
 
-  return await res.json()
-}
-
-// 5. Sauvegarde incrémentale de l'historique Jack
-export async function saveDossierChatHistory(id: string, messages: { role: string; content: string }[]) {
-  return await updateDossierStatusAndData(id, {
-    chat_history: messages
-  })
-}
-
-// 6. Ajout d'une intervention complémentaire post-transmission
-export async function appendConstatToDossier(id: string, nouveauConstat: string) {
-  const current = await getDossierById(id)
-  if (!current) throw new Error("Dossier introuvable.")
-
-  const updatedConstats = current.constats_technicien 
-    ? `${current.constats_technicien} | [Avenant] ${nouveauConstat}`
-    : nouveauConstat
-
-  return await updateDossierStatusAndData(id, {
-    constats_technicien: updatedConstats,
-    statut: "devis_a_revalider"
-  })
+  return data
 }
