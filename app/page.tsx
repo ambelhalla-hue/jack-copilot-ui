@@ -1,372 +1,178 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { 
-  Wrench, 
-  Send, 
-  Mic, 
-  MicOff, 
-  Volume2, 
-  VolumeX, 
-  Camera, 
+  Car, 
+  Plus, 
+  Archive, 
+  Clock, 
+  LogOut, 
   RefreshCw, 
-  Video, 
-  ShoppingCart, 
-  ChevronUp, 
-  ChevronDown,
-  ShieldAlert
+  ArrowRight, 
+  Wrench, 
+  CheckCircle2, 
+  FileText 
 } from "lucide-react"
-import { updateDossierStatusAndData } from "@/lib/supabase"
-import { auditInterventionSafety } from "@/lib/safetyEngine"
+import { supabase, getDossiersByStatut, DossierAtelier } from "@/lib/supabase"
 
-export default function MobileCockpit() {
-  const [plate, setPlate] = useState("AA-123-BB")
-  const [vehicle, setVehicle] = useState("Peugeot 3008 II - 1.5 BlueHDi (DV5RC)")
-  const [mileage, setMileage] = useState("160000")
-  
-  // ID de session d'atelier
-  const [sessionId, setSessionId] = useState<string>("")
-  
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([
-    {
-      role: "assistant",
-      content: "Atelier connecté. Renseigne le code DTC ou le problème constaté sous le pont."
-    }
-  ])
-  const [input, setInput] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
+export default function AtelierDashboard() {
+  const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<"en_cours" | "archives">("en_cours")
+  const [dossiers, setDossiers] = useState<DossierAtelier[]>([])
+  const [userEmail, setUserEmail] = useState<string>("")
 
-  // Reconnaissance et Synthèse Vocale
-  const [isListening, setIsListening] = useState(false)
-  const [speechEnabled, setSpeechEnabled] = useState(true)
-  const recognitionRef = useRef<any>(null)
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-
+  // Vérification de la session et chargement initial
   useEffect(() => {
-    setSessionId(`diag_${Date.now()}`)
-
-    if (typeof window !== "undefined") {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition()
-        recognition.lang = "fr-FR"
-        recognition.interimResults = false
-        recognition.maxAlternatives = 1
-
-        recognition.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript
-          setInput(prev => (prev ? `${prev} ` : "") + transcript)
-          setIsListening(false)
-        }
-        recognition.onerror = () => setIsListening(false)
-        recognition.onend = () => setIsListening(false)
-        recognitionRef.current = recognition
+    async function initSession() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.push("/auth")
+        return
       }
+      setUserEmail(user.email || "Technicien")
+      loadVehicles(activeTab)
     }
+    initSession()
   }, [])
 
+  // Rechargement au changement d'onglet
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+    loadVehicles(activeTab)
+  }, [activeTab])
 
-  // Synthèse vocale Jack
-  const speakText = (text: string) => {
-    if (!speechEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return
-    window.speechSynthesis.cancel()
-
-    const cleanSpeech = text
-      .replace(/\[PIECE_CIBLE\s*:\s*.*?\]/gi, "")
-      .replace(/\[OUTIL_CIBLE\s*:\s*.*?\]/gi, "")
-      .trim()
-
-    const utterance = new SpeechSynthesisUtterance(cleanSpeech)
-    utterance.lang = "fr-FR"
-    utterance.rate = 1.05
-    window.speechSynthesis.speak(utterance)
-  }
-
-  const toggleListening = () => {
-    if (!recognitionRef.current) {
-      alert("Dictée vocale non supportée sur ce navigateur.")
-      return
-    }
-    if (isListening) {
-      recognitionRef.current.stop()
-      setIsListening(false)
-    } else {
-      recognitionRef.current.start()
-      setIsListening(true)
-    }
-  }
-
-  // Extraction des balises d'affiliation
-  const extractTag = (text: string, tag: "PIECE_CIBLE" | "OUTIL_CIBLE") => {
-    const regex = new RegExp(`\\[${tag}\\s*:\\s*(.*?)\\]`, "i")
-    const match = text.match(regex)
-    return match ? match[1].trim() : null
-  }
-
-  const cleanDisplayContent = (text: string) => {
-    return text
-      .replace(/\[PIECE_CIBLE\s*:\s*.*?\]/gi, "")
-      .replace(/\[OUTIL_CIBLE\s*:\s*.*?\]/gi, "")
-      .trim()
-  }
-
-  const handleSend = async (textToSend: string) => {
-    if (!textToSend.trim()) return
-
-    const newMessages = [...messages, { role: "user", content: textToSend }]
-    setMessages(newMessages)
-    setInput("")
+  const loadVehicles = async (tab: "en_cours" | "archives") => {
     setLoading(true)
-
     try {
-      const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
-      if (apiMessages.length === 2) {
-        apiMessages[0].content = `[CONTEXTE : Véhicule ${vehicle} (${plate}), Kilométrage: ${mileage} km] \n\n${apiMessages[0].content}`
-      }
-
-      const res = await fetch("/api/diag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages })
-      })
-      
-      const data = await res.json()
-      const reply = data.error ? `Erreur: ${data.error}` : data.response
-
-      const updatedHistory = [...newMessages, { role: "assistant", content: reply }]
-      setMessages(updatedHistory)
-
-      if (!data.error) {
-        speakText(reply)
-      }
-
-      // Persistance Supabase via la fonction existante
-      if (sessionId) {
-        updateDossierStatusAndData(sessionId, {
-          immatriculation: plate,
-          kilometrage: parseInt(mileage) || 0,
-          chat_history: updatedHistory,
-          constats_technicien: reply.slice(0, 500),
-          statut: "en_diagnostic"
-        }).catch((err: any) => {
-          console.error("Erreur enregistrement Supabase :", err?.message)
-        })
-      }
-
-    } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "Liaison interrompue avec Jack." }])
+      const list = await getDossiersByStatut(tab)
+      setDossiers(list)
+    } catch (err) {
+      console.error("Erreur chargement dossiers :", err)
     } finally {
       setLoading(false)
     }
   }
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push("/auth")
+  }
+
   return (
-    <main className="h-screen w-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans overflow-hidden">
+    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans p-4 max-w-2xl mx-auto gap-4">
       
-      {/* BANDEAU SUPÉRIEUR */}
-      <header className="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2 overflow-hidden">
-          <span className="font-mono text-xs font-bold px-2 py-1 bg-blue-950 border border-blue-700/60 text-blue-400 rounded shrink-0">
-            {plate}
-          </span>
-          <p className="text-xs text-slate-200 font-medium truncate">
-            {vehicle}
-          </p>
+      {/* 1. EN-TÊTE DASHBOARD */}
+      <header className="flex justify-between items-center bg-slate-900 border border-slate-800 p-3.5 rounded-2xl shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-blue-600/20 border border-blue-500/30 rounded-xl text-blue-400">
+            <Wrench className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-white">Jack Copilot</h1>
+            <p className="text-[11px] font-mono text-slate-400 truncate max-w-[180px]">{userEmail}</p>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-2 shrink-0">
-          <button 
-            type="button"
-            onClick={() => setSpeechEnabled(!speechEnabled)}
-            className={`p-1.5 rounded-lg border text-xs ${speechEnabled ? "border-emerald-800 text-emerald-400 bg-emerald-950/60" : "border-slate-800 text-slate-500 bg-slate-950"}`}
-            title={speechEnabled ? "Voix Jack activée" : "Voix Jack coupée"}
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => loadVehicles(activeTab)}
+            className="p-2 text-slate-400 hover:text-white rounded-lg border border-slate-800 hover:bg-slate-800"
+            title="Rafraîchir"
           >
-            {speechEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-400" : ""}`} />
           </button>
-          <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-1 rounded">
-            {mileage} km
-          </span>
+          <button
+            onClick={handleLogout}
+            className="p-2 text-slate-400 hover:text-rose-400 rounded-lg border border-slate-800 hover:bg-slate-800"
+            title="Déconnexion"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
-      {/* ZONE CONVERSATION */}
-      <section className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg, idx) => {
-          const piece = msg.role === "assistant" ? extractTag(msg.content, "PIECE_CIBLE") : null
-          const outil = msg.role === "assistant" ? extractTag(msg.content, "OUTIL_CIBLE") : null
-          const textClean = cleanDisplayContent(msg.content)
+      {/* 2. BOUTON ACTION MAJEURE : NOUVEAU VÉHICULE */}
+      <button
+        onClick={() => router.push("/ccs")}
+        className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-950 transition shrink-0"
+      >
+        <Plus className="w-4 h-4" />
+        <span>Nouveau véhicule</span>
+      </button>
 
-          return (
-            <div 
-              key={idx} 
-              className={`flex flex-col max-w-[88%] ${msg.role === "user" ? "self-end items-end ml-auto" : "self-start items-start mr-auto"}`}
-            >
-              <span className="text-[10px] font-mono text-slate-500 mb-1 uppercase tracking-wider">
-                {msg.role === "user" ? "Mécano" : "Jack"}
-              </span>
-
-              <div 
-                className={`p-3.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                  msg.role === "user" 
-                    ? "bg-blue-600 text-white rounded-tr-none" 
-                    : "bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none shadow-md"
-                }`}
-              >
-                {textClean}
-              </div>
-
-              {/* BOUTONS D'ACTION */}
-              {msg.role === "assistant" && idx > 0 && !msg.content.includes("Erreur") && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  <a 
-                    href={`https://www.youtube.com/results?search_query=tuto+remplacement+${encodeURIComponent(piece || vehicle)}+${encodeURIComponent(vehicle)}`}
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold bg-red-950/40 text-red-400 border border-red-900/60 px-2.5 py-1 rounded-lg hover:bg-red-900/40"
-                  >
-                    <Video className="w-3.5 h-3.5" /> Tuto Vidéo
-                  </a>
-
-                  {piece && (
-                    <a 
-                      href={`https://www.auto-doc.fr/search?keyword=${encodeURIComponent(piece)}+${encodeURIComponent(vehicle)}`}
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-emerald-950/40 text-emerald-400 border border-emerald-900/60 px-2.5 py-1 rounded-lg hover:bg-emerald-900/40"
-                    >
-                      <ShoppingCart className="w-3.5 h-3.5" /> {piece}
-                    </a>
-                  )}
-
-                  {outil && (
-                    <a 
-                      href={`https://www.amazon.fr/s?k=${encodeURIComponent(outil)}&tag=jackcopilot-21`}
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-amber-950/40 text-amber-400 border border-amber-900/60 px-2.5 py-1 rounded-lg hover:bg-amber-900/40"
-                    >
-                      <Wrench className="w-3.5 h-3.5" /> {outil} (24h)
-                    </a>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
-
-        {loading && (
-          <div className="self-start flex items-center gap-2 text-slate-400 text-xs p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" /> Jack analyse les données...
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </section>
-
-      {/* TIROIR BAS RETRACTABLE */}
-      <div className="bg-slate-900 border-t border-slate-800 shrink-0">
-        <button 
-          onClick={() => setDrawerOpen(!drawerOpen)}
-          className="w-full py-1.5 px-4 flex items-center justify-between text-xs text-slate-400 hover:text-slate-200"
+      {/* 3. SÉLECTEUR D'ONGLETS FILTRES */}
+      <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
+        <button
+          onClick={() => setActiveTab("en_cours")}
+          className={`py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition ${
+            activeTab === "en_cours"
+              ? "bg-slate-800 text-blue-400 shadow-sm"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
         >
-          <span className="flex items-center gap-2 font-mono">
-            <ShoppingCart className="w-3.5 h-3.5 text-emerald-400" /> Nomenclature & Devis estimé
-          </span>
-          {drawerOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+          <Clock className="w-3.5 h-3.5" />
+          <span>En cours</span>
         </button>
 
-        {drawerOpen && (
-          <div className="p-3 border-t border-slate-800/80 bg-slate-950 text-xs font-mono space-y-2">
-            <div className="flex justify-between text-slate-300">
-              <span>Main-d'œuvre barémée (Taux 75 €/h)</span>
-              <span className="text-emerald-400 font-bold">1,40 h • 105,00 €</span>
-            </div>
-            <div className="flex justify-between text-slate-300">
-              <span>Fournitures & consommables</span>
-              <span className="text-emerald-400 font-bold">18,50 €</span>
-            </div>
-
-            {/* AUDIT SÉCURITÉ DÉTERMINISTE (P4) */}
-            {(() => {
-              const detectedParts = messages
-                .filter(m => m.role === "assistant")
-                .map(m => extractTag(m.content, "PIECE_CIBLE") || "")
-                .filter(Boolean)
-              
-              const audit = auditInterventionSafety(detectedParts)
-              if (audit.warnings.length === 0 && audit.mandatoryParts.length === 0) return null
-
-              return (
-                <div className="p-2.5 bg-rose-950/40 border border-rose-800/80 rounded-xl space-y-1.5">
-                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1">
-                    <ShieldAlert className="w-3 h-3" /> Garde-fou Sécurité Métier
-                  </span>
-                  {audit.warnings.map((w, i) => (
-                    <p key={i} className="text-[11px] text-rose-300 font-sans leading-tight">
-                      • {w}
-                    </p>
-                  ))}
-                  {audit.mandatoryParts.map((p, i) => (
-                    <div key={i} className="flex justify-between items-center text-[10px] text-amber-300 font-mono pt-1">
-                      <span>+ {p.designation}</span>
-                      <span className="bg-amber-950 px-1.5 py-0.5 rounded border border-amber-800">Inclus d'office</span>
-                    </div>
-                  ))}
-                </div>
-              )
-            })()}
-
-            <button className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-sans font-bold text-xs">
-              Partager Devis Client (PDF / SMS)
-            </button>
-          </div>
-        )}
-
-        {/* BARRE DE COMMANDE SOUS LE POUCE */}
-        <div className="p-3 flex items-center gap-2">
-          <button 
-            type="button"
-            className="p-3 bg-slate-800 text-slate-300 hover:text-white rounded-xl flex items-center justify-center shrink-0"
-            title="Prendre une photo de la valise ou de la pièce"
-          >
-            <Camera className="w-5 h-5" />
-          </button>
-
-          <input 
-            type="text" 
-            value={input} 
-            onChange={(e) => setInput(e.target.value)} 
-            onKeyDown={(e) => e.key === "Enter" && handleSend(input)}
-            placeholder={isListening ? "Jack écoute..." : "Ex : 0 V sur la pin 3 / durite percée..."} 
-            className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-sm flex-1 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
-          />
-
-          <button 
-            type="button"
-            onClick={toggleListening}
-            className={`p-3 rounded-xl flex items-center justify-center shrink-0 transition ${
-              isListening 
-                ? "bg-rose-600 text-white animate-pulse" 
-                : "bg-slate-800 text-blue-400 hover:text-blue-300"
-            }`}
-            title="Dicter en mains sales"
-          >
-            {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          </button>
-
-          <button 
-            onClick={() => handleSend(input)} 
-            disabled={loading || !input.trim()}
-            className="p-3 bg-blue-600 disabled:bg-slate-800 text-white rounded-xl flex items-center justify-center shrink-0 transition"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
+        <button
+          onClick={() => setActiveTab("archives")}
+          className={`py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition ${
+            activeTab === "archives"
+              ? "bg-slate-800 text-emerald-400 shadow-sm"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <Archive className="w-3.5 h-3.5" />
+          <span>Archives</span>
+        </button>
       </div>
+
+      {/* 4. LISTE DES DOSSIERS */}
+      <section className="flex-1 overflow-y-auto space-y-2.5">
+        {loading ? (
+          <div className="text-center py-12 text-xs text-slate-500 flex items-center justify-center gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin text-blue-400" /> Chargement de l'atelier...
+          </div>
+        ) : dossiers.length === 0 ? (
+          <div className="text-center py-12 text-slate-500 text-xs border border-dashed border-slate-800 rounded-2xl p-6">
+            {activeTab === "en_cours"
+              ? "Aucun véhicule en cours sous le pont."
+              : "Aucune intervention archivée."}
+          </div>
+        ) : (
+          dossiers.map((d) => (
+            <div
+              key={d.id}
+              onClick={() => router.push(`/tech/${d.id}`)}
+              className="p-3.5 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl flex items-center justify-between gap-3 cursor-pointer transition group"
+            >
+              <div className="flex flex-col gap-1 min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-950 border border-blue-800/60 text-blue-400 rounded">
+                    {d.immatriculation}
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-400">
+                    {d.kilometrage ? `${d.kilometrage.toLocaleString("fr-FR")} km` : "0 km"}
+                  </span>
+                </div>
+                <p className="text-xs font-medium text-slate-200 truncate">
+                  {d.vin || "Modèle non spécifié"}
+                </p>
+                {d.constats_technicien && (
+                  <p className="text-[11px] text-slate-400 line-clamp-1">
+                    {d.constats_technicien}
+                  </p>
+                )}
+              </div>
+
+              <div className="shrink-0 text-slate-500 group-hover:text-blue-400 transition">
+                <ArrowRight className="w-4 h-4" />
+              </div>
+            </div>
+          ))
+        )}
+      </section>
 
     </main>
   )
