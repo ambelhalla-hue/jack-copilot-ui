@@ -1,19 +1,20 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { 
   Car, 
   Camera, 
-  CheckCircle2, 
   ArrowRight, 
   ShieldAlert, 
-  Trash2,
-  Gauge,
-  RefreshCw,
-  Mic,
-  MicOff
+  Trash2, 
+  Gauge, 
+  RefreshCw, 
+  Mic, 
+  MicOff,
+  ArrowLeft
 } from "lucide-react"
-import { insertDossierAtelier } from "@/lib/supabase"
+import { insertDossierAtelier, supabase } from "@/lib/supabase"
 
 interface PhotoAngle {
   id: string
@@ -22,14 +23,22 @@ interface PhotoAngle {
 }
 
 export default function ReceptionCCS() {
+  const router = useRouter()
   const [immat, setImmat] = useState("")
   const [vehicle, setVehicle] = useState("")
   const [kilometrage, setKilometrage] = useState("")
   const [motif, setMotif] = useState("")
   const [loading, setLoading] = useState(false)
   const [isScanningPlate, setIsScanningPlate] = useState(false)
-  const [dossierCree, setDossierCree] = useState(false)
 
+  // Vérification de session
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) router.push("/auth")
+    })
+  }, [])
+
+  // Reconnaissance vocale native
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<any>(null)
 
@@ -37,11 +46,11 @@ export default function ReceptionCCS() {
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
 
   const [angles, setAngles] = useState<PhotoAngle[]>([
-    { id: "avant", label: "1. Face avant", preview: null },
-    { id: "gauche", label: "2. Côté gauche", preview: null },
-    { id: "droit", label: "3. Côté droit", preview: null },
-    { id: "arriere", label: "4. Arrière / Coffre", preview: null },
-    { id: "compteur", label: "5. Photo compteur", preview: null },
+    { id: "avant", label: "Face avant", preview: null },
+    { id: "gauche", label: "Côté gauche", preview: null },
+    { id: "droit", label: "Côté droit", preview: null },
+    { id: "arriere", label: "Arrière", preview: null },
+    { id: "compteur", label: "Compteur", preview: null },
   ])
 
   useEffect(() => {
@@ -59,12 +68,10 @@ export default function ReceptionCCS() {
             currentTranscript += event.results[i][0].transcript
           }
           if (currentTranscript.trim()) {
-            setMotif(prev => {
-              const base = prev ? prev.trim() + " " : ""
-              return base + currentTranscript
-            })
+            setMotif(prev => (prev ? prev.trim() + " " : "") + currentTranscript)
           }
         }
+
         recognition.onerror = () => setIsListening(false)
         recognition.onend = () => setIsListening(false)
         recognitionRef.current = recognition
@@ -73,7 +80,10 @@ export default function ReceptionCCS() {
   }, [])
 
   const toggleListening = () => {
-    if (!recognitionRef.current) return
+    if (!recognitionRef.current) {
+      alert("Dictée vocale non supportée sur ce navigateur.")
+      return
+    }
     if (isListening) {
       recognitionRef.current.stop()
       setIsListening(false)
@@ -87,11 +97,9 @@ export default function ReceptionCCS() {
     const clean = val.toUpperCase().trim()
     setImmat(clean)
     if (clean === "AA-123-BB") {
-      setVehicle("Peugeot 308 II - 1.5 BlueHDi 130 (DV5RC)")
-    } else if (clean === "GR-608-BP") {
-      setVehicle("Renault Clio IV - 1.5 dCi 90 (K9K)")
+      setVehicle("Peugeot 3008 II - 1.5 BlueHDi (DV5RC)")
     } else if (clean.length >= 7 && !vehicle) {
-      setVehicle("Peugeot 308 II - 1.5 BlueHDi 130")
+      setVehicle("Véhicule client")
     }
   }
 
@@ -113,7 +121,7 @@ export default function ReceptionCCS() {
         if (data.immatriculation) handlePlateChange(data.immatriculation)
         if (data.modele_detecte && !vehicle) setVehicle(data.modele_detecte)
       } catch (err) {
-        console.error(err)
+        console.error("Erreur OCR:", err)
       } finally {
         setIsScanningPlate(false)
       }
@@ -138,265 +146,221 @@ export default function ReceptionCCS() {
     setAngles(prev => prev.map(a => a.id === angleId ? { ...a, preview: null } : a))
   }
 
-  const handleCreateDossier = async (e: React.FormEvent) => {
+  // Création du dossier et bascule immédiate vers Jack Copilot
+  const handleCreateAndStartDiag = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!immat || !kilometrage) return
 
     setLoading(true)
-
     try {
-      const photosArray = angles.map(a => a.label)
-
-      await insertDossierAtelier({
+      const nouveauDossier = await insertDossierAtelier({
         immatriculation: immat,
-        vin: vehicle,
-        kilometrage: parseInt(kilometrage, 10),
-        statut: "en_attente_tech",
-        photos_tour_vehicule: photosArray,
-        constats_technicien: motif || "Entretien / Contrôle standard"
+        vin: vehicle || "Modèle non spécifié",
+        kilometrage: parseInt(kilometrage) || 0,
+        statut: "en_diagnostic",
+        constats_technicien: motif || "Entrée atelier",
+        photos_tour_vehicule: angles.map(a => a.preview).filter(Boolean) as string[]
       })
 
-      setDossierCree(true)
+      // Redirection directe vers Jack sous le pont
+      if (nouveauDossier?.id) {
+        router.push(`/tech/${nouveauDossier.id}`)
+      } else {
+        router.push("/")
+      }
     } catch (err: any) {
-      alert("Erreur lors de l'enregistrement dans Supabase : " + (err.message || err))
+      alert("Erreur lors de la création du dossier : " + err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const resetForm = () => {
-    setImmat("")
-    setVehicle("")
-    setKilometrage("")
-    setMotif("")
-    setAngles(prev => prev.map(a => ({ ...a, preview: null })))
-    setDossierCree(false)
-    setIsListening(false)
-  }
-
-  const totalPhotosPrises = angles.filter(a => a.preview !== null).length
-
   return (
-    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-3xl mx-auto p-4 md:p-6 gap-5 selection:bg-blue-500/30">
+    <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans max-w-xl mx-auto p-4 gap-4">
       
-      {/* HEADER CCS */}
-      <header className="flex justify-between items-center p-4 bg-[#111827]/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-blue-600/20 border border-blue-500/30 rounded-xl text-blue-400">
-            <Camera className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="font-bold text-slate-100 text-base md:text-lg">Réception & Tour de Véhicule</h1>
-            <p className="text-xs text-slate-400">Conseiller Commercial Service (CCS)</p>
-          </div>
+      {/* HEADER AVEC RETOUR DASHBOARD */}
+      <header className="flex justify-between items-center bg-slate-900 border border-slate-800 p-3 rounded-2xl shrink-0">
+        <button
+          type="button"
+          onClick={() => router.push("/")}
+          className="p-2 text-slate-400 hover:text-white rounded-lg border border-slate-800 hover:bg-slate-800 transition"
+          title="Retour au Dashboard"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div className="text-center">
+          <h1 className="text-sm font-bold text-white">Réception Véhicule</h1>
+          <p className="text-[10px] text-slate-400">Prise en charge directe</p>
         </div>
-        <span className="text-xs font-mono px-3 py-1 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-full font-semibold">
-          Accueil Dépose
-        </span>
+        <div className="w-8" />
       </header>
 
-      {dossierCree ? (
-        <div className="p-8 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl text-center flex flex-col items-center gap-4 animate-in fade-in duration-300">
-          <CheckCircle2 className="w-14 h-14 text-emerald-400 animate-bounce" />
-          <div>
-            <h2 className="text-lg font-bold text-emerald-300">Dossier d'entrée enregistré sur Supabase !</h2>
-            <p className="text-xs text-slate-300 mt-1">
-              Le véhicule <strong className="text-white">{immat}</strong> est synchronisé en base de données européenne pour l'atelier.
-            </p>
-          </div>
-          <div className="bg-[#0B0F17] p-4 rounded-xl border border-white/5 w-full text-xs font-mono text-slate-300 text-left space-y-1.5">
-            <p>• Kilométrage compteur : <span className="text-emerald-400 font-bold">{kilometrage} km</span></p>
-            <p>• Photos stockées : <span className="text-cyan-400 font-bold">{totalPhotosPrises} angle(s)</span></p>
-            <p>• Statut : <span className="text-amber-400 font-bold">en_attente_tech</span></p>
-          </div>
-          <button
-            onClick={resetForm}
-            className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-sm transition cursor-pointer"
-          >
-            Réceptionner le véhicule suivant
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={handleCreateDossier} className="flex flex-col gap-4">
-          
-          {/* 1. IDENTIFICATION */}
-          <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Car className="w-4 h-4 text-blue-400" /> 1. Identification Entrée
-            </h2>
+      <form onSubmit={handleCreateAndStartDiag} className="flex flex-col gap-4">
+        
+        {/* 1. PLAQUE & COMPTEUR */}
+        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <Car className="w-3.5 h-3.5 text-blue-400" /> 1. Identification
+          </span>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  ref={plateCameraInputRef}
-                  onChange={handleScanPlateFile}
-                  className="hidden"
-                />
-                <input
-                  type="text"
-                  value={isScanningPlate ? "Scan en cours..." : immat}
-                  onChange={(e) => handlePlateChange(e.target.value)}
-                  placeholder="Plaque (ex: AA-123-BB)"
-                  className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 font-mono uppercase text-blue-400 font-bold text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500/40 pr-11"
-                  required
-                  disabled={isScanningPlate}
-                />
-                <button
-                  type="button"
-                  onClick={() => plateCameraInputRef.current?.click()}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-blue-400 p-1 rounded-lg transition cursor-pointer"
-                  title="Scanner la plaque par photo"
-                >
-                  {isScanningPlate ? (
-                    <RefreshCw className="w-5 h-5 animate-spin text-blue-400" />
-                  ) : (
-                    <Camera className="w-5 h-5" />
-                  )}
-                </button>
-              </div>
-
-              <div className="relative">
-                <input
-                  type="number"
-                  value={kilometrage}
-                  onChange={(e) => setKilometrage(e.target.value)}
-                  placeholder="Kilométrage compteur (km)"
-                  className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 font-mono text-emerald-400 font-bold text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-500/40 pr-10"
-                  required
-                />
-                <Gauge className="w-4 h-4 text-slate-500 absolute right-3.5 top-3.5 pointer-events-none" />
-              </div>
-            </div>
-
-            <input
-              type="text"
-              value={vehicle}
-              onChange={(e) => setVehicle(e.target.value)}
-              placeholder="Modèle et motorisation"
-              className="bg-[#0B0F17] border border-slate-700/60 rounded-xl px-4 py-3 text-slate-200 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-            />
-          </section>
-
-          {/* 2. PHOTOS DU TOUR DE CAISSE */}
-          <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Camera className="w-4 h-4 text-cyan-400" /> 2. Tour de Véhicule Numérique (Photos)
-              </h2>
-              <span className="text-xs font-mono text-cyan-400">
-                {totalPhotosPrises}/5 prises
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-1">
-              {angles.map((angle) => (
-                <div
-                  key={angle.id}
-                  onClick={() => triggerCamera(angle.id)}
-                  className={`relative h-28 rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-2 text-center cursor-pointer overflow-hidden transition-all duration-200 ${
-                    angle.preview 
-                      ? "border-emerald-500 bg-emerald-950/20" 
-                      : "border-slate-700/80 bg-[#0B0F17] hover:border-blue-500 hover:bg-slate-900"
-                  }`}
-                >
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    ref={(el) => { fileInputRefs.current[angle.id] = el }}
-                    onChange={(e) => handleFileChange(angle.id, e)}
-                    className="hidden"
-                  />
-
-                  {angle.preview ? (
-                    <>
-                      <img 
-                        src={angle.preview} 
-                        alt={angle.label} 
-                        className="absolute inset-0 w-full h-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                        <button
-                          type="button"
-                          onClick={(e) => removePhoto(angle.id, e)}
-                          className="p-2 bg-rose-600/90 text-white rounded-lg hover:bg-rose-500 transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <span className="absolute bottom-1 left-1 right-1 text-[9px] font-mono bg-black/70 px-1.5 py-0.5 rounded text-emerald-300 truncate">
-                        ✓ {angle.label}
-                      </span>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center gap-1.5 text-slate-400">
-                      <Camera className="w-5 h-5 text-slate-500" />
-                      <span className="text-[11px] font-medium text-slate-300 leading-tight">
-                        {angle.label}
-                      </span>
-                      <span className="text-[9px] text-blue-400 font-mono">+ Photographier</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* 3. SYMPTÔMES */}
-          <section className="bg-[#111827]/70 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <ShieldAlert className="w-4 h-4 text-amber-400" /> 3. Demande & Symptômes Client
-              </h2>
-
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="relative">
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                ref={plateCameraInputRef}
+                onChange={handleScanPlateFile}
+                className="hidden"
+              />
+              <input
+                type="text"
+                value={isScanningPlate ? "Scan..." : immat}
+                onChange={(e) => handlePlateChange(e.target.value)}
+                placeholder="AA-123-BB"
+                className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 font-mono uppercase text-blue-400 font-bold text-sm w-full focus:outline-none focus:border-blue-500 pr-9 text-center"
+                required
+                disabled={isScanningPlate}
+              />
               <button
                 type="button"
-                onClick={toggleListening}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                  isListening
-                    ? "bg-rose-600 text-white animate-pulse"
-                    : "bg-slate-800 text-cyan-400 hover:bg-slate-700 border border-white/5"
-                }`}
+                onClick={() => plateCameraInputRef.current?.click()}
+                className="absolute right-2 top-2.5 text-slate-400 hover:text-blue-400"
+                title="Scanner la plaque"
               >
-                {isListening ? (
-                  <>
-                    <MicOff className="w-4 h-4" /> Dictée...
-                  </>
+                {isScanningPlate ? (
+                  <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
                 ) : (
-                  <>
-                    <Mic className="w-4 h-4" /> Mode vocal
-                  </>
+                  <Camera className="w-4 h-4" />
                 )}
               </button>
             </div>
 
-            <textarea
-              value={motif}
-              onChange={(e) => setMotif(e.target.value)}
-              placeholder="Saisissez ou dictez la demande client..."
-              className="bg-[#0B0F17] border border-slate-700/60 rounded-xl p-3.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[90px]"
-              required
-            />
-          </section>
+            <div className="relative">
+              <input
+                type="number"
+                value={kilometrage}
+                onChange={(e) => setKilometrage(e.target.value)}
+                placeholder="Km compteur"
+                className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 font-mono text-emerald-400 font-bold text-sm w-full focus:outline-none focus:border-emerald-500 pr-8 text-right"
+                required
+              />
+              <Gauge className="w-4 h-4 text-slate-500 absolute right-2.5 top-3 pointer-events-none" />
+            </div>
+          </div>
 
-          {/* TRANSMISSION */}
-          <button
-            type="submit"
-            disabled={loading || !immat || !kilometrage}
-            className={`w-full py-4 px-6 rounded-2xl font-bold text-sm md:text-base flex items-center justify-center gap-2.5 transition-all duration-300 ${
-              !loading && immat && kilometrage
-                ? "bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-[0_0_25px_rgba(8,145,178,0.4)] cursor-pointer"
-                : "bg-slate-800 text-slate-500 cursor-not-allowed"
-            }`}
-          >
-            {loading ? "Enregistrement sur Supabase..." : "Transmettre le dossier à l'Atelier"}
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </form>
-      )}
+          <input
+            type="text"
+            value={vehicle}
+            onChange={(e) => setVehicle(e.target.value)}
+            placeholder="Modèle et motorisation (ex: Peugeot 3008 II - 1.5 BlueHDi)"
+            className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+          />
+        </section>
+
+        {/* 2. PHOTOS FACULTATIVES DU TOUR DE CAISSE */}
+        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2.5">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <Camera className="w-3.5 h-3.5 text-cyan-400" /> 2. Photos état des lieux
+            </span>
+            <span className="text-[10px] font-mono text-slate-500">
+              {angles.filter(a => a.preview !== null).length}/5
+            </span>
+          </div>
+
+          <div className="grid grid-cols-5 gap-1.5">
+            {angles.map((angle) => (
+              <div
+                key={angle.id}
+                onClick={() => triggerCamera(angle.id)}
+                className={`relative h-16 rounded-xl border border-dashed flex flex-col items-center justify-center p-1 text-center cursor-pointer overflow-hidden transition ${
+                  angle.preview 
+                    ? "border-emerald-500 bg-emerald-950/20" 
+                    : "border-slate-800 bg-slate-950 hover:border-slate-700"
+                }`}
+              >
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  ref={(el) => { fileInputRefs.current[angle.id] = el }}
+                  onChange={(e) => handleFileChange(angle.id, e)}
+                  className="hidden"
+                />
+
+                {angle.preview ? (
+                  <>
+                    <img 
+                      src={angle.preview} 
+                      alt={angle.label} 
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => removePhoto(angle.id, e)}
+                      className="absolute top-1 right-1 p-1 bg-black/60 rounded text-rose-400 hover:text-white"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[9px] text-slate-400 leading-tight">
+                    {angle.label}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 3. MOTIF CLIENT AVEC DICTÉE VOCALE */}
+        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2.5">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-400" /> 3. Demande / Panne constatée
+            </span>
+
+            <button
+              type="button"
+              onClick={toggleListening}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${
+                isListening
+                  ? "bg-rose-600 text-white animate-pulse"
+                  : "bg-slate-800 text-blue-400 hover:bg-slate-700"
+              }`}
+            >
+              {isListening ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+              <span className="text-[10px]">{isListening ? "Écoute..." : "Dictée"}</span>
+            </button>
+          </div>
+
+          <textarea
+            value={motif}
+            onChange={(e) => setMotif(e.target.value)}
+            placeholder="Ex : Voyant moteur allumé + perte de puissance après 2500 tr/min..."
+            className="bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-blue-500 min-h-[70px]"
+            required
+          />
+        </section>
+
+        {/* BOUTON ENREGISTRER ET ATTAQUER DIRECTEMENT */}
+        <button
+          type="submit"
+          disabled={loading || !immat || !kilometrage}
+          className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-950 transition"
+        >
+          {loading ? (
+            <RefreshCw className="w-4 h-4 animate-spin text-white" />
+          ) : (
+            <>
+              <span>Enregistrer et attaquer le diag</span>
+              <ArrowRight className="w-4 h-4" />
+            </>
+          )}
+        </button>
+
+      </form>
     </main>
   )
 }
