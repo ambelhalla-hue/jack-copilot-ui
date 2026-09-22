@@ -39,15 +39,16 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [closing, setClosing] = useState(false)
 
-  // Reconnaissance et Synthèse Vocale
+  // Enregistreur audio universel
   const [isListening, setIsListening] = useState(false)
-const [speechEnabled, setSpeechEnabled] = useState(true)
-const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-const audioChunksRef = useRef<Blob[]>([])
+  const [speechEnabled, setSpeechEnabled] = useState(true)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // 1. Chargement initial
+  // Chargement du dossier
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser()
@@ -87,8 +88,8 @@ const audioChunksRef = useRef<Blob[]>([])
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Synthèse vocale Jack
- const speakText = (text: string) => {
+  // Synthèse vocale avec voix naturelle
+  const speakText = (text: string) => {
     if (!speechEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return
     window.speechSynthesis.cancel()
 
@@ -111,19 +112,16 @@ const audioChunksRef = useRef<Blob[]>([])
         v.name.includes("Premium")
       )
     )
-    if (premiumVoice) {
-      utterance.voice = premiumVoice
-    }
+    if (premiumVoice) utterance.voice = premiumVoice
 
     window.speechSynthesis.speak(utterance)
   }
 
- // Enregistreur universel compatible Samsung Internet, Chrome, Safari, etc.
+  // Micro universel MediaRecorder
   const toggleListening = async () => {
     if (typeof window === "undefined") return
 
     if (isListening) {
-      // Fin de la dictée : on stoppe l'enregistrement audio
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop()
       }
@@ -135,10 +133,9 @@ const audioChunksRef = useRef<Blob[]>([])
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       audioChunksRef.current = []
 
-      // Détection du format audio supporté par le navigateur
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+      const mimeType = typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
         ? "audio/webm"
-        : MediaRecorder.isTypeSupported("audio/mp4")
+        : typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/mp4")
         ? "audio/mp4"
         : ""
 
@@ -152,9 +149,7 @@ const audioChunksRef = useRef<Blob[]>([])
       }
 
       mediaRecorder.onstop = async () => {
-        // Extinction du voyant micro du smartphone
         stream.getTracks().forEach((track) => track.stop())
-
         const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" })
         const reader = new FileReader()
 
@@ -174,7 +169,7 @@ const audioChunksRef = useRef<Blob[]>([])
             setInput(data.text || "")
           } catch {
             setInput("")
-            alert("Erreur lors de la transcription vocale.")
+            alert("Erreur lors de la transcription.")
           }
         }
 
@@ -185,10 +180,33 @@ const audioChunksRef = useRef<Blob[]>([])
       setIsListening(true)
     } catch (err) {
       console.error("Erreur micro:", err)
-      alert("Accès micro refusé. Veuillez vérifier les autorisations de votre navigateur.")
+      alert("Accès micro refusé. Vérifiez les autorisations de votre navigateur.")
       setIsListening(false)
     }
   }
+
+  // Prise de photo (fonction asynchrone propre)
+  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setLoadingVision(true)
+    const reader = new FileReader()
+
+    reader.onloadend = async () => {
+      const base64String = reader.result as string
+      try {
+        const res = await fetch("/api/diag-vision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageBase64: base64String,
+            mimeType: file.type || "image/jpeg",
+            vehicleContext: `${vehicle} (${plate}) - ${mileage} km`,
+            userNotes: input || "Analyse de la pièce ou valise"
+          })
+        })
+
         const data = await res.json()
         const visionReply = data.result || data.response || "Aucune anomalie détectée sur l'image."
 
@@ -197,6 +215,7 @@ const audioChunksRef = useRef<Blob[]>([])
           { role: "user", content: "📷 [Photo transmise pour analyse sous le pont]" },
           { role: "assistant", content: visionReply }
         ]
+
         setMessages(updatedHistory)
         speakText(visionReply)
 
@@ -204,12 +223,14 @@ const audioChunksRef = useRef<Blob[]>([])
           chat_history: updatedHistory,
           constats_technicien: visionReply.slice(0, 500)
         })
-      } catch {
-        setMessages(prev => [...prev, { role: "assistant", content: "Échec de l'envoi de la photo." }])
+      } catch (err) {
+        console.error("Erreur vision:", err)
+        setMessages(prev => [...prev, { role: "assistant", content: "Échec de l'analyse photo." }])
       } finally {
         setLoadingVision(false)
       }
     }
+
     reader.readAsDataURL(file)
   }
 
@@ -226,7 +247,6 @@ const audioChunksRef = useRef<Blob[]>([])
       .trim()
   }
 
-  // Envoi texte classique
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim()) return
 
@@ -252,9 +272,7 @@ const audioChunksRef = useRef<Blob[]>([])
       const updatedHistory = [...newMessages, { role: "assistant", content: reply }]
       setMessages(updatedHistory)
 
-      if (!data.error) {
-        speakText(reply)
-      }
+      if (!data.error) speakText(reply)
 
       await updateDossierStatusAndData(dossierId, {
         chat_history: updatedHistory,
@@ -297,7 +315,7 @@ const audioChunksRef = useRef<Blob[]>([])
   return (
     <main className="h-screen w-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans overflow-hidden">
       
-      {/* BANDEAU SUPÉRIEUR COMPACT */}
+      {/* BANDEAU SUPÉRIEUR */}
       <header className="p-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 overflow-hidden">
           <button 
@@ -423,7 +441,6 @@ const audioChunksRef = useRef<Blob[]>([])
               <span className="text-emerald-400 font-bold">1,40 h • 105,00 €</span>
             </div>
 
-            {/* AUDIT SÉCURITÉ */}
             {(() => {
               const detectedParts = messages
                 .filter(m => m.role === "assistant")
@@ -462,9 +479,8 @@ const audioChunksRef = useRef<Blob[]>([])
           </div>
         )}
 
-        {/* BARRE DE CONTRÔLE */}
+        {/* BARRE DE COMMANDE */}
         <div className="p-3 flex items-center gap-2">
-          {/* Input fichier caché pour appareil photo */}
           <input
             type="file"
             accept="image/*"
@@ -479,7 +495,7 @@ const audioChunksRef = useRef<Blob[]>([])
             onClick={() => cameraInputRef.current?.click()}
             disabled={loadingVision}
             className="p-3 bg-slate-800 text-slate-300 hover:text-white rounded-xl flex items-center justify-center shrink-0 active:bg-slate-700"
-            title="Prendre une photo de la pièce ou valise"
+            title="Photo pièce ou valise"
           >
             {loadingVision ? <RefreshCw className="w-5 h-5 animate-spin text-blue-400" /> : <Camera className="w-5 h-5" />}
           </button>
@@ -489,7 +505,7 @@ const audioChunksRef = useRef<Blob[]>([])
             value={input} 
             onChange={(e) => setInput(e.target.value)} 
             onKeyDown={(e) => e.key === "Enter" && handleSend(input)}
-            placeholder={isListening ? "Jack écoute..." : "Ex : 0 V sur la pin 3 / durite percée..."} 
+            placeholder={isListening ? "Enregistrement en cours..." : "Ex : 0 V sur la pin 3 / durite percée..."} 
             className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-sm flex-1 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
           />
 
