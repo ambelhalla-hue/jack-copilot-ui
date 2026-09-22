@@ -17,7 +17,9 @@ import {
   ChevronDown, 
   ShieldAlert, 
   ArrowLeft, 
-  CheckCircle2 
+  CheckCircle2,
+  X,
+  Image as ImageIcon
 } from "lucide-react"
 import { getDossierById, updateDossierStatusAndData, supabase } from "@/lib/supabase"
 import { auditInterventionSafety } from "@/lib/safetyEngine"
@@ -44,8 +46,12 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
   const [speechEnabled, setSpeechEnabled] = useState(true)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
-  
-  const cameraInputRef = useRef<HTMLInputElement>(null)
+
+  // Viseur Caméra Intégré (Anti-crash mémoire)
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Chargement du dossier
@@ -117,7 +123,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
     window.speechSynthesis.speak(utterance)
   }
 
-  // Micro universel MediaRecorder
+  // Micro universel
   const toggleListening = async () => {
     if (typeof window === "undefined") return
 
@@ -143,9 +149,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
       mediaRecorderRef.current = mediaRecorder
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data)
-        }
+        if (event.data.size > 0) audioChunksRef.current.push(event.data)
       }
 
       mediaRecorder.onstop = async () => {
@@ -172,98 +176,127 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
             alert("Erreur lors de la transcription.")
           }
         }
-
         reader.readAsDataURL(audioBlob)
       }
 
       mediaRecorder.start()
       setIsListening(true)
-    } catch (err) {
-      console.error("Erreur micro:", err)
-      alert("Accès micro refusé. Vérifiez les autorisations.")
+    } catch {
+      alert("Accès micro refusé. Vérifiez vos autorisations.")
       setIsListening(false)
     }
   }
 
-  // Traitement et compression photo anti-crash
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 1. DÉMARRER LA CAMÉRA INTÉGRÉE (Dans la page, sans recharger)
+  const startCamera = async () => {
+    try {
+      setCameraOpen(true)
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        videoRef.current.play()
+      }
+    } catch {
+      setCameraOpen(false)
+      // Si la caméra en direct est bloquée, ouvre le sélecteur standard
+      galleryInputRef.current?.click()
+    }
+  }
+
+  // 2. FERMER LA CAMÉRA
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    setCameraOpen(false)
+  }
+
+  // 3. PRENDRE LA PHOTO DEPUIS LE FLUX VIDÉO
+  const capturePhotoFromStream = async () => {
+    if (!videoRef.current) return
+
+    const video = videoRef.current
+    const canvas = document.createElement("canvas")
+    canvas.width = video.videoWidth || 1280
+    canvas.height = video.videoHeight || 720
+    const ctx = canvas.getContext("2d")
+    ctx?.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+    const base64Image = canvas.toDataURL("image/jpeg", 0.75)
+    stopCamera()
+    await sendPhotoToJack(base64Image)
+  }
+
+  // 4. CHOIX DEPUIS LA GALERIE (Alternative fluide)
+  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      const img = new Image()
+      img.onload = async () => {
+        const canvas = document.createElement("canvas")
+        const maxDim = 1000
+        let { width, height } = img
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width)
+          width = maxDim
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height)
+          height = maxDim
+        }
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext("2d")
+        ctx?.drawImage(img, 0, 0, width, height)
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7)
+        await sendPhotoToJack(compressedBase64)
+      }
+      img.src = event.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+
+  // 5. ENVOI DE LA PHOTO À JACK VISION
+  const sendPhotoToJack = async (imageBase64: string) => {
     setLoadingVision(true)
+    const userMsg = { role: "user", content: "📷 [Photo transmise pour analyse sous le pont]" }
+    setMessages(prev => [...prev, userMsg])
 
-    // Message immédiat dans la conversation
-    const photoMessage = { role: "user", content: "📷 [Photo transmise pour analyse sous le pont]" }
-    setMessages(prev => [...prev, photoMessage])
-
-    // Création d'une URL blob locale sans saturer la RAM
-    const objectUrl = URL.createObjectURL(file)
-    const img = new Image()
-
-    img.onload = async () => {
-      URL.revokeObjectURL(objectUrl) // Libération immédiate de la mémoire
-
-      // Redimensionnement max 1000px
-      const maxDim = 1000
-      let width = img.width
-      let height = img.height
-
-      if (width > height && width > maxDim) {
-        height = Math.round((height * maxDim) / width)
-        width = maxDim
-      } else if (height > maxDim) {
-        width = Math.round((width * maxDim) / height)
-        height = maxDim
-      }
-
-      const canvas = document.createElement("canvas")
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext("2d")
-      ctx?.drawImage(img, 0, 0, width, height)
-
-      // Compression JPEG qualité 0.70 (~200 Ko)
-      const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7)
-
-      try {
-        const res = await fetch("/api/diag-vision", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageBase64: compressedBase64,
-            mimeType: "image/jpeg",
-            vehicleContext: `${vehicle} (${plate}) - ${mileage} km`,
-            userNotes: input || "Analyse de la pièce ou valise"
-          })
+    try {
+      const res = await fetch("/api/diag-vision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64,
+          mimeType: "image/jpeg",
+          vehicleContext: `${vehicle} (${plate}) - ${mileage} km`,
+          userNotes: input || "Analyse de la pièce ou valise"
         })
+      })
 
-        const data = await res.json()
-        const visionReply = data.response || data.result || data.error || "Analyse indisponible."
-        const assistantMessage = { role: "assistant", content: visionReply }
+      const data = await res.json()
+      const visionReply = data.response || data.result || data.error || "Analyse indisponible."
+      const assistantMsg = { role: "assistant", content: visionReply }
 
-        setMessages(prev => [...prev, assistantMessage])
-        speakText(visionReply)
+      setMessages(prev => [...prev, assistantMsg])
+      speakText(visionReply)
 
-        await updateDossierStatusAndData(dossierId, {
-          chat_history: [...messages, photoMessage, assistantMessage],
-          constats_technicien: visionReply.slice(0, 500)
-        })
-      } catch (err) {
-        console.error("Erreur vision:", err)
-        setMessages(prev => [...prev, { role: "assistant", content: "Échec de l'analyse visuelle." }])
-      } finally {
-        setLoadingVision(false)
-        if (e.target) e.target.value = "" // Réinitialise l'input
-      }
-    }
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl)
+      await updateDossierStatusAndData(dossierId, {
+        chat_history: [...messages, userMsg, assistantMsg],
+        constats_technicien: visionReply.slice(0, 500)
+      })
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "Échec de l'analyse photo." }])
+    } finally {
       setLoadingVision(false)
-      setMessages(prev => [...prev, { role: "assistant", content: "Impossible de lire la photo." }])
     }
-
-    img.src = objectUrl
   }
 
   const extractTag = (text: string, tag: "PIECE_CIBLE" | "OUTIL_CIBLE") => {
@@ -345,8 +378,59 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
   }
 
   return (
-    <main className="h-screen w-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans overflow-hidden">
+    <main className="h-screen w-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans overflow-hidden relative">
       
+      {/* 📸 MODAL VISEUR CAMÉRA EN DIRECT (Ne recharge jamais la page) */}
+      {cameraOpen && (
+        <div className="absolute inset-0 z-50 bg-black flex flex-col justify-between p-4">
+          <div className="flex justify-between items-center z-10">
+            <span className="text-xs font-mono bg-black/60 px-3 py-1 rounded-full text-white">
+              Viseur direct sous caisse
+            </span>
+            <button 
+              type="button" 
+              onClick={stopCamera} 
+              className="p-2 bg-slate-800 text-white rounded-full hover:bg-slate-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="relative flex-1 flex items-center justify-center overflow-hidden my-2 rounded-2xl border border-slate-800 bg-slate-950">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className="w-full h-full object-cover"
+            />
+          </div>
+
+          <div className="flex justify-around items-center pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                stopCamera()
+                galleryInputRef.current?.click()
+              }}
+              className="p-3 bg-slate-900 border border-slate-800 text-slate-300 rounded-full"
+              title="Choisir depuis la galerie"
+            >
+              <ImageIcon className="w-6 h-6" />
+            </button>
+
+            {/* Gros bouton déclencheur */}
+            <button
+              type="button"
+              onClick={capturePhotoFromStream}
+              className="w-16 h-16 rounded-full border-4 border-white bg-red-600 flex items-center justify-center shadow-lg active:scale-95 transition"
+            />
+
+            <div className="w-12" />
+          </div>
+        </div>
+      )}
+
       {/* BANDEAU SUPÉRIEUR */}
       <header className="p-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 overflow-hidden">
@@ -511,23 +595,23 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
           </div>
         )}
 
-        {/* BARRE DE CONTRÔLE */}
+        {/* BARRE DE COMMANDE */}
         <div className="p-3 flex items-center gap-2">
+          {/* Input galerie caché en repli */}
           <input
             type="file"
             accept="image/*"
-            capture="environment"
-            ref={cameraInputRef}
-            onChange={handlePhotoCapture}
+            ref={galleryInputRef}
+            onChange={handleGalleryUpload}
             className="hidden"
           />
 
           <button 
             type="button"
-            onClick={() => cameraInputRef.current?.click()}
+            onClick={startCamera}
             disabled={loadingVision}
             className="p-3 bg-slate-800 text-slate-300 hover:text-white rounded-xl flex items-center justify-center shrink-0 active:bg-slate-700"
-            title="Photo pièce ou valise"
+            title="Ouvrir la caméra directe"
           >
             {loadingVision ? <RefreshCw className="w-5 h-5 animate-spin text-blue-400" /> : <Camera className="w-5 h-5" />}
           </button>
