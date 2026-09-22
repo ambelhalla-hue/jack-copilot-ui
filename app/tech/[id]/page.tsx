@@ -87,7 +87,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
   }, [messages])
 
   // Synthèse vocale Jack
-  const speakText = (text: string) => {
+ const speakText = (text: string) => {
     if (!speechEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return
     window.speechSynthesis.cancel()
 
@@ -98,7 +98,22 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
 
     const utterance = new SpeechSynthesisUtterance(cleanSpeech)
     utterance.lang = "fr-FR"
-    utterance.rate = 1.05
+    utterance.rate = 1.0
+    utterance.pitch = 0.95
+
+    const voices = window.speechSynthesis.getVoices()
+    const premiumVoice = voices.find(v => 
+      v.lang.startsWith("fr") && (
+        v.name.includes("Google") || 
+        v.name.includes("Natural") || 
+        v.name.includes("Enhanced") ||
+        v.name.includes("Premium")
+      )
+    )
+    if (premiumVoice) {
+      utterance.voice = premiumVoice
+    }
+
     window.speechSynthesis.speak(utterance)
   }
 
