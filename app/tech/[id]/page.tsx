@@ -88,7 +88,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Synthèse vocale avec voix naturelle
+  // Synthèse vocale
   const speakText = (text: string) => {
     if (!speechEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return
     window.speechSynthesis.cancel()
@@ -180,58 +180,90 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
       setIsListening(true)
     } catch (err) {
       console.error("Erreur micro:", err)
-      alert("Accès micro refusé. Vérifiez les autorisations de votre navigateur.")
+      alert("Accès micro refusé. Vérifiez les autorisations.")
       setIsListening(false)
     }
   }
 
-  // Prise de photo (fonction asynchrone propre)
+  // Traitement et compression photo anti-crash
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
     setLoadingVision(true)
-    const reader = new FileReader()
 
-    reader.onloadend = async () => {
-      const base64String = reader.result as string
+    // Message immédiat dans la conversation
+    const photoMessage = { role: "user", content: "📷 [Photo transmise pour analyse sous le pont]" }
+    setMessages(prev => [...prev, photoMessage])
+
+    // Création d'une URL blob locale sans saturer la RAM
+    const objectUrl = URL.createObjectURL(file)
+    const img = new Image()
+
+    img.onload = async () => {
+      URL.revokeObjectURL(objectUrl) // Libération immédiate de la mémoire
+
+      // Redimensionnement max 1000px
+      const maxDim = 1000
+      let width = img.width
+      let height = img.height
+
+      if (width > height && width > maxDim) {
+        height = Math.round((height * maxDim) / width)
+        width = maxDim
+      } else if (height > maxDim) {
+        width = Math.round((width * maxDim) / height)
+        height = maxDim
+      }
+
+      const canvas = document.createElement("canvas")
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext("2d")
+      ctx?.drawImage(img, 0, 0, width, height)
+
+      // Compression JPEG qualité 0.70 (~200 Ko)
+      const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7)
+
       try {
         const res = await fetch("/api/diag-vision", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            imageBase64: base64String,
-            mimeType: file.type || "image/jpeg",
+            imageBase64: compressedBase64,
+            mimeType: "image/jpeg",
             vehicleContext: `${vehicle} (${plate}) - ${mileage} km`,
             userNotes: input || "Analyse de la pièce ou valise"
           })
         })
 
         const data = await res.json()
-        const visionReply = data.result || data.response || "Aucune anomalie détectée sur l'image."
+        const visionReply = data.response || data.result || data.error || "Analyse indisponible."
+        const assistantMessage = { role: "assistant", content: visionReply }
 
-        const updatedHistory = [
-          ...messages,
-          { role: "user", content: "📷 [Photo transmise pour analyse sous le pont]" },
-          { role: "assistant", content: visionReply }
-        ]
-
-        setMessages(updatedHistory)
+        setMessages(prev => [...prev, assistantMessage])
         speakText(visionReply)
 
         await updateDossierStatusAndData(dossierId, {
-          chat_history: updatedHistory,
+          chat_history: [...messages, photoMessage, assistantMessage],
           constats_technicien: visionReply.slice(0, 500)
         })
       } catch (err) {
         console.error("Erreur vision:", err)
-        setMessages(prev => [...prev, { role: "assistant", content: "Échec de l'analyse photo." }])
+        setMessages(prev => [...prev, { role: "assistant", content: "Échec de l'analyse visuelle." }])
       } finally {
         setLoadingVision(false)
+        if (e.target) e.target.value = "" // Réinitialise l'input
       }
     }
 
-    reader.readAsDataURL(file)
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      setLoadingVision(false)
+      setMessages(prev => [...prev, { role: "assistant", content: "Impossible de lire la photo." }])
+    }
+
+    img.src = objectUrl
   }
 
   const extractTag = (text: string, tag: "PIECE_CIBLE" | "OUTIL_CIBLE") => {
@@ -416,7 +448,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
         {(loading || loadingVision) && (
           <div className="self-start flex items-center gap-2 text-slate-400 text-xs p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
             <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
-            {loadingVision ? "Jack Vision analyse la photo..." : "Jack analyse les données..."}
+            {loadingVision ? "Jack Vision ausculte la photo..." : "Jack analyse les données..."}
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -479,7 +511,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
           </div>
         )}
 
-        {/* BARRE DE COMMANDE */}
+        {/* BARRE DE CONTRÔLE */}
         <div className="p-3 flex items-center gap-2">
           <input
             type="file"
