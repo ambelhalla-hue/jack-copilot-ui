@@ -14,10 +14,10 @@ import {
   Video, 
   ShoppingCart, 
   ChevronUp, 
-  ChevronDown,
-  ShieldAlert,
-  ArrowLeft,
-  CheckCircle2
+  ChevronDown, 
+  ShieldAlert, 
+  ArrowLeft, 
+  CheckCircle2 
 } from "lucide-react"
 import { getDossierById, updateDossierStatusAndData, supabase } from "@/lib/supabase"
 import { auditInterventionSafety } from "@/lib/safetyEngine"
@@ -35,6 +35,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
+  const [loadingVision, setLoadingVision] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [closing, setClosing] = useState(false)
 
@@ -42,9 +43,10 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
   const [isListening, setIsListening] = useState(false)
   const [speechEnabled, setSpeechEnabled] = useState(true)
   const recognitionRef = useRef<any>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // 1. Chargement du dossier sélectionné
+  // 1. Chargement initial
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser()
@@ -80,28 +82,6 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
     init()
   }, [dossierId])
 
-  // Initialisation reconnaissance vocale
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition()
-        recognition.lang = "fr-FR"
-        recognition.interimResults = false
-        recognition.maxAlternatives = 1
-
-        recognition.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript
-          setInput(prev => (prev ? `${prev} ` : "") + transcript)
-          setIsListening(false)
-        }
-        recognition.onerror = () => setIsListening(false)
-        recognition.onend = () => setIsListening(false)
-        recognitionRef.current = recognition
-      }
-    }
-  }, [])
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
@@ -122,18 +102,89 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
     window.speechSynthesis.speak(utterance)
   }
 
+  // Micro : déclenchement avec demande de permission native
   const toggleListening = () => {
-    if (!recognitionRef.current) {
-      alert("Dictée vocale non supportée sur ce navigateur.")
+    if (typeof window === "undefined") return
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert("La dictée vocale n'est pas supportée par ce navigateur mobile (utilisez Google Chrome).")
       return
     }
+
     if (isListening) {
-      recognitionRef.current.stop()
+      recognitionRef.current?.stop()
       setIsListening(false)
-    } else {
-      recognitionRef.current.start()
-      setIsListening(true)
+      return
     }
+
+    try {
+      const recognition = new SpeechRecognition()
+      recognition.lang = "fr-FR"
+      recognition.interimResults = false
+      recognition.continuous = false
+
+      recognition.onstart = () => setIsListening(true)
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript
+        setInput(prev => (prev ? `${prev} ` : "") + transcript)
+        setIsListening(false)
+      }
+      recognition.onerror = () => setIsListening(false)
+      recognition.onend = () => setIsListening(false)
+
+      recognitionRef.current = recognition
+      recognition.start()
+    } catch {
+      setIsListening(false)
+    }
+  }
+
+  // Prise de photo directe
+  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setLoadingVision(true)
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+      const base64String = reader.result as string
+      try {
+        setMessages(prev => [...prev, { role: "user", content: "📷 [Photo transmise pour analyse sous le pont]" }])
+
+        const res = await fetch("/api/diag-vision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageBase64: base64String,
+            mimeType: file.type || "image/jpeg",
+            vehicleContext: `${vehicle} (${plate}) - ${mileage} km`,
+            userNotes: input || "Analyse de la pièce ou écran OBD"
+          })
+        })
+
+        const data = await res.json()
+        const visionReply = data.result || data.response || "Aucune anomalie détectée sur l'image."
+
+        const updatedHistory = [
+          ...messages,
+          { role: "user", content: "📷 [Photo transmise pour analyse sous le pont]" },
+          { role: "assistant", content: visionReply }
+        ]
+        setMessages(updatedHistory)
+        speakText(visionReply)
+
+        await updateDossierStatusAndData(dossierId, {
+          chat_history: updatedHistory,
+          constats_technicien: visionReply.slice(0, 500)
+        })
+      } catch {
+        setMessages(prev => [...prev, { role: "assistant", content: "Échec de l'envoi de la photo." }])
+      } finally {
+        setLoadingVision(false)
+      }
+    }
+    reader.readAsDataURL(file)
   }
 
   const extractTag = (text: string, tag: "PIECE_CIBLE" | "OUTIL_CIBLE") => {
@@ -149,7 +200,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
       .trim()
   }
 
-  // Envoi d'un message + Persistance dans le dossier
+  // Envoi texte classique
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim()) return
 
@@ -179,7 +230,6 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
         speakText(reply)
       }
 
-      // Sauvegarde continue dans le dossier Supabase
       await updateDossierStatusAndData(dossierId, {
         chat_history: updatedHistory,
         constats_technicien: reply.slice(0, 500)
@@ -192,7 +242,6 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
     }
   }
 
-  // Clôture du dossier ➔ Déplacement vers les Archives
   const handleCloseIntervention = async () => {
     if (!confirm("Confirmer la fin d'intervention ? Le véhicule passera dans les archives.")) return
     setClosing(true)
@@ -213,7 +262,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
     return (
       <main className="h-screen w-screen bg-[#0B0F17] text-slate-100 flex items-center justify-center font-sans">
         <div className="flex items-center gap-2 text-xs text-slate-400">
-          <RefreshCw className="w-4 h-4 animate-spin text-blue-400" /> Chargement du dossier d'atelier...
+          <RefreshCw className="w-4 h-4 animate-spin text-blue-400" /> Chargement du dossier...
         </div>
       </main>
     )
@@ -246,7 +295,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
             type="button"
             onClick={() => setSpeechEnabled(!speechEnabled)}
             className={`p-1.5 rounded-lg border text-xs ${speechEnabled ? "border-emerald-800 text-emerald-400 bg-emerald-950/60" : "border-slate-800 text-slate-500 bg-slate-950"}`}
-            title={speechEnabled ? "Voix Jack activée" : "Voix Jack coupée"}
+            title={speechEnabled ? "Voix activée" : "Voix coupée"}
           >
             {speechEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
           </button>
@@ -256,7 +305,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
         </div>
       </header>
 
-      {/* ZONE DE CONVERSATION XXL */}
+      {/* ZONE DE CHAT */}
       <section className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, idx) => {
           const piece = msg.role === "assistant" ? extractTag(msg.content, "PIECE_CIBLE") : null
@@ -282,14 +331,13 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
                 {textClean}
               </div>
 
-              {/* BOUTONS D'ACTION MARCHANDS */}
               {msg.role === "assistant" && idx > 0 && !msg.content.includes("Erreur") && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   <a 
                     href={`https://www.youtube.com/results?search_query=tuto+remplacement+${encodeURIComponent(piece || vehicle)}+${encodeURIComponent(vehicle)}`}
                     target="_blank" 
                     rel="noopener noreferrer" 
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold bg-red-950/40 text-red-400 border border-red-900/60 px-2.5 py-1 rounded-lg hover:bg-red-900/40"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold bg-red-950/40 text-red-400 border border-red-900/60 px-2.5 py-1 rounded-lg"
                   >
                     <Video className="w-3.5 h-3.5" /> Tuto Vidéo
                   </a>
@@ -299,7 +347,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
                       href={`https://www.auto-doc.fr/search?keyword=${encodeURIComponent(piece)}+${encodeURIComponent(vehicle)}`}
                       target="_blank" 
                       rel="noopener noreferrer" 
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-emerald-950/40 text-emerald-400 border border-emerald-900/60 px-2.5 py-1 rounded-lg hover:bg-emerald-900/40"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-emerald-950/40 text-emerald-400 border border-emerald-900/60 px-2.5 py-1 rounded-lg"
                     >
                       <ShoppingCart className="w-3.5 h-3.5" /> {piece}
                     </a>
@@ -310,9 +358,9 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
                       href={`https://www.amazon.fr/s?k=${encodeURIComponent(outil)}&tag=jackcopilot-21`}
                       target="_blank" 
                       rel="noopener noreferrer" 
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-amber-950/40 text-amber-400 border border-amber-900/60 px-2.5 py-1 rounded-lg hover:bg-amber-900/40"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-amber-950/40 text-amber-400 border border-amber-900/60 px-2.5 py-1 rounded-lg"
                     >
-                      <Wrench className="w-3.5 h-3.5" /> {outil} (24h)
+                      <Wrench className="w-3.5 h-3.5" /> {outil}
                     </a>
                   )}
                 </div>
@@ -321,15 +369,16 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
           )
         })}
 
-        {loading && (
+        {(loading || loadingVision) && (
           <div className="self-start flex items-center gap-2 text-slate-400 text-xs p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" /> Jack analyse les données...
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+            {loadingVision ? "Jack Vision analyse la photo..." : "Jack analyse les données..."}
           </div>
         )}
         <div ref={messagesEndRef} />
       </section>
 
-      {/* TIROIR BAS RETRACTABLE AVEC BOUTON CLÔTURE */}
+      {/* TIROIR BAS */}
       <div className="bg-slate-900 border-t border-slate-800 shrink-0">
         <button 
           onClick={() => setDrawerOpen(!drawerOpen)}
@@ -344,15 +393,11 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
         {drawerOpen && (
           <div className="p-3 border-t border-slate-800/80 bg-slate-950 text-xs font-mono space-y-2">
             <div className="flex justify-between text-slate-300">
-              <span>Main-d'œuvre barémée (Taux 75 €/h)</span>
+              <span>Main-d'œuvre barémée (75 €/h)</span>
               <span className="text-emerald-400 font-bold">1,40 h • 105,00 €</span>
             </div>
-            <div className="flex justify-between text-slate-300">
-              <span>Fournitures & consommables</span>
-              <span className="text-emerald-400 font-bold">18,50 €</span>
-            </div>
 
-            {/* AUDIT SÉCURITÉ DÉTERMINISTE (P4) */}
+            {/* AUDIT SÉCURITÉ */}
             {(() => {
               const detectedParts = messages
                 .filter(m => m.role === "assistant")
@@ -365,49 +410,52 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
               return (
                 <div className="p-2.5 bg-rose-950/40 border border-rose-800/80 rounded-xl space-y-1.5">
                   <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1">
-                    <ShieldAlert className="w-3 h-3" /> Garde-fou Sécurité Métier
+                    <ShieldAlert className="w-3 h-3" /> Garde-fou Sécurité
                   </span>
                   {audit.warnings.map((w, i) => (
-                    <p key={i} className="text-[11px] text-rose-300 font-sans leading-tight">
-                      • {w}
-                    </p>
+                    <p key={i} className="text-[11px] text-rose-300 font-sans leading-tight">• {w}</p>
                   ))}
                   {audit.mandatoryParts.map((p, i) => (
                     <div key={i} className="flex justify-between items-center text-[10px] text-amber-300 font-mono pt-1">
                       <span>+ {p.designation}</span>
-                      <span className="bg-amber-950 px-1.5 py-0.5 rounded border border-amber-800">Inclus d'office</span>
+                      <span className="bg-amber-950 px-1.5 py-0.5 rounded border border-amber-800">Inclus</span>
                     </div>
                   ))}
                 </div>
               )
             })()}
 
-            {/* BOUTON CLÔTURE INTERVENTION */}
             <button 
               onClick={handleCloseIntervention}
               disabled={closing}
               className="w-full mt-2 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white rounded-lg font-sans font-bold text-xs flex items-center justify-center gap-1.5 transition"
             >
-              {closing ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Terminer l'intervention (Archiver)</span>
-                </>
-              )}
+              {closing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              <span>Terminer l'intervention (Archiver)</span>
             </button>
           </div>
         )}
 
-        {/* BARRE DE COMMANDE SOUS LE POUCE */}
+        {/* BARRE DE CONTRÔLE */}
         <div className="p-3 flex items-center gap-2">
+          {/* Input fichier caché pour appareil photo */}
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            ref={cameraInputRef}
+            onChange={handlePhotoCapture}
+            className="hidden"
+          />
+
           <button 
             type="button"
-            className="p-3 bg-slate-800 text-slate-300 hover:text-white rounded-xl flex items-center justify-center shrink-0"
-            title="Prendre une photo de la valise ou de la pièce"
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={loadingVision}
+            className="p-3 bg-slate-800 text-slate-300 hover:text-white rounded-xl flex items-center justify-center shrink-0 active:bg-slate-700"
+            title="Prendre une photo de la pièce ou valise"
           >
-            <Camera className="w-5 h-5" />
+            {loadingVision ? <RefreshCw className="w-5 h-5 animate-spin text-blue-400" /> : <Camera className="w-5 h-5" />}
           </button>
 
           <input 
@@ -425,9 +473,9 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
             className={`p-3 rounded-xl flex items-center justify-center shrink-0 transition ${
               isListening 
                 ? "bg-rose-600 text-white animate-pulse" 
-                : "bg-slate-800 text-blue-400 hover:text-blue-300"
+                : "bg-slate-800 text-blue-400 hover:text-blue-300 active:bg-slate-700"
             }`}
-            title="Dicter en mains sales"
+            title="Dicter la mesure"
           >
             {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
           </button>
@@ -435,7 +483,7 @@ export default function AtelierTechIntervention({ params }: { params: Promise<{ 
           <button 
             onClick={() => handleSend(input)} 
             disabled={loading || !input.trim()}
-            className="p-3 bg-blue-600 disabled:bg-slate-800 text-white rounded-xl flex items-center justify-center shrink-0 transition"
+            className="p-3 bg-blue-600 disabled:bg-slate-800 text-white rounded-xl flex items-center justify-center shrink-0 transition active:bg-blue-700"
           >
             <Send className="w-5 h-5" />
           </button>
