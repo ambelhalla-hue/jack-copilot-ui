@@ -1,6 +1,5 @@
 "use client"
 
-import { auditInterventionSafety } from "@/lib/safetyEngine"
 import { useState, useRef, useEffect } from "react"
 import { 
   Wrench, 
@@ -11,20 +10,21 @@ import {
   VolumeX, 
   Camera, 
   RefreshCw, 
-  Youtube, 
+  Video, 
   ShoppingCart, 
   ChevronUp, 
   ChevronDown,
-  Car
+  ShieldAlert
 } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { updateDossierStatusAndData } from "@/lib/supabase"
+import { auditInterventionSafety } from "@/lib/safetyEngine"
 
 export default function MobileCockpit() {
   const [plate, setPlate] = useState("AA-123-BB")
   const [vehicle, setVehicle] = useState("Peugeot 3008 II - 1.5 BlueHDi (DV5RC)")
   const [mileage, setMileage] = useState("160000")
   
-  // P2 : Persistance - ID de session unique
+  // ID de session d'atelier
   const [sessionId, setSessionId] = useState<string>("")
   
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([
@@ -37,14 +37,13 @@ export default function MobileCockpit() {
   const [loading, setLoading] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // P3 : Reconnaissance et Synthèse Vocale
+  // Reconnaissance et Synthèse Vocale
   const [isListening, setIsListening] = useState(false)
   const [speechEnabled, setSpeechEnabled] = useState(true)
   const recognitionRef = useRef<any>(null)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Initialisation ID session & SpeechRecognition
   useEffect(() => {
     setSessionId(`diag_${Date.now()}`)
 
@@ -72,12 +71,11 @@ export default function MobileCockpit() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // P3 : Lecture à voix haute de la réponse de Jack
+  // Synthèse vocale Jack
   const speakText = (text: string) => {
     if (!speechEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return
     window.speechSynthesis.cancel()
 
-    // Nettoyage des balises pour la voix
     const cleanSpeech = text
       .replace(/\[PIECE_CIBLE\s*:\s*.*?\]/gi, "")
       .replace(/\[OUTIL_CIBLE\s*:\s*.*?\]/gi, "")
@@ -85,14 +83,13 @@ export default function MobileCockpit() {
 
     const utterance = new SpeechSynthesisUtterance(cleanSpeech)
     utterance.lang = "fr-FR"
-    utterance.rate = 1.05 // Débit direct d'atelier
+    utterance.rate = 1.05
     window.speechSynthesis.speak(utterance)
   }
 
-  // P3 : Bascule écoute micro
   const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert("Dictée vocale non supportée sur ce navigateur (utilisez Chrome).")
+      alert("Dictée vocale non supportée sur ce navigateur.")
       return
     }
     if (isListening) {
@@ -104,7 +101,7 @@ export default function MobileCockpit() {
     }
   }
 
-  // P1 : Parsing des balises d'affiliation
+  // Extraction des balises d'affiliation
   const extractTag = (text: string, tag: "PIECE_CIBLE" | "OUTIL_CIBLE") => {
     const regex = new RegExp(`\\[${tag}\\s*:\\s*(.*?)\\]`, "i")
     const match = text.match(regex)
@@ -118,7 +115,6 @@ export default function MobileCockpit() {
       .trim()
   }
 
-  // Envoi du message + P2 : Sauvegarde incrémentale Supabase
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim()) return
 
@@ -145,27 +141,21 @@ export default function MobileCockpit() {
       const updatedHistory = [...newMessages, { role: "assistant", content: reply }]
       setMessages(updatedHistory)
 
-      // Lecture vocale Jack
       if (!data.error) {
         speakText(reply)
       }
 
-      // P2 : Enregistrement dans dossiers_atelier (chat_history)
-      if (supabase && sessionId) {
-        supabase
-          .from("dossiers_atelier")
-          .upsert({
-            id: sessionId,
-            immatriculation: plate,
-            kilometrage: parseInt(mileage) || 0,
-            chat_history: updatedHistory,
-            constats_technicien: reply.slice(0, 500),
-            statut: "en_diagnostic",
-            updated_at: new Date().toISOString()
-          })
-          .then(({ error }: any) => {
-            if (error) console.error("Erreur persistance Supabase:", error.message)
-          })
+      // Persistance Supabase via la fonction existante
+      if (sessionId) {
+        updateDossierStatusAndData(sessionId, {
+          immatriculation: plate,
+          kilometrage: parseInt(mileage) || 0,
+          chat_history: updatedHistory,
+          constats_technicien: reply.slice(0, 500),
+          statut: "en_diagnostic"
+        }).catch((err: any) => {
+          console.error("Erreur enregistrement Supabase :", err?.message)
+        })
       }
 
     } catch {
@@ -178,7 +168,7 @@ export default function MobileCockpit() {
   return (
     <main className="h-screen w-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans overflow-hidden">
       
-      {/* BANDEAU SUPÉRIEUR COMPACT */}
+      {/* BANDEAU SUPÉRIEUR */}
       <header className="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 overflow-hidden">
           <span className="font-mono text-xs font-bold px-2 py-1 bg-blue-950 border border-blue-700/60 text-blue-400 rounded shrink-0">
@@ -204,7 +194,7 @@ export default function MobileCockpit() {
         </div>
       </header>
 
-      {/* ZONE DE CONVERSATION XXL */}
+      {/* ZONE CONVERSATION */}
       <section className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, idx) => {
           const piece = msg.role === "assistant" ? extractTag(msg.content, "PIECE_CIBLE") : null
@@ -230,7 +220,7 @@ export default function MobileCockpit() {
                 {textClean}
               </div>
 
-              {/* P1 : BOUTONS MARCHANDS ET TUTO CIBLÉS */}
+              {/* BOUTONS D'ACTION */}
               {msg.role === "assistant" && idx > 0 && !msg.content.includes("Erreur") && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   <a 
@@ -239,7 +229,7 @@ export default function MobileCockpit() {
                     rel="noopener noreferrer" 
                     className="inline-flex items-center gap-1.5 text-xs font-semibold bg-red-950/40 text-red-400 border border-red-900/60 px-2.5 py-1 rounded-lg hover:bg-red-900/40"
                   >
-                    <Youtube className="w-3.5 h-3.5" /> Tuto Vidéo
+                    <Video className="w-3.5 h-3.5" /> Tuto Vidéo
                   </a>
 
                   {piece && (
@@ -299,8 +289,8 @@ export default function MobileCockpit() {
               <span>Fournitures & consommables</span>
               <span className="text-emerald-400 font-bold">18,50 €</span>
             </div>
-            
-            {/* P4 : AUDIT SÉCURITÉ DÉTERMINISTE */}
+
+            {/* AUDIT SÉCURITÉ DÉTERMINISTE (P4) */}
             {(() => {
               const detectedParts = messages
                 .filter(m => m.role === "assistant")
@@ -312,16 +302,16 @@ export default function MobileCockpit() {
 
               return (
                 <div className="p-2.5 bg-rose-950/40 border border-rose-800/80 rounded-xl space-y-1.5">
-                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block">
-                    Garde-fou Sécurité Métier
+                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                    <ShieldAlert className="w-3 h-3" /> Garde-fou Sécurité Métier
                   </span>
-                  {audit.warnings.map((w, idx) => (
-                    <p key={idx} className="text-[11px] text-rose-300 font-sans leading-tight">
+                  {audit.warnings.map((w, i) => (
+                    <p key={i} className="text-[11px] text-rose-300 font-sans leading-tight">
                       • {w}
                     </p>
                   ))}
-                  {audit.mandatoryParts.map((p, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-[10px] text-amber-300 font-mono pt-1">
+                  {audit.mandatoryParts.map((p, i) => (
+                    <div key={i} className="flex justify-between items-center text-[10px] text-amber-300 font-mono pt-1">
                       <span>+ {p.designation}</span>
                       <span className="bg-amber-950 px-1.5 py-0.5 rounded border border-amber-800">Inclus d'office</span>
                     </div>
@@ -329,6 +319,7 @@ export default function MobileCockpit() {
                 </div>
               )
             })()}
+
             <button className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-sans font-bold text-xs">
               Partager Devis Client (PDF / SMS)
             </button>
