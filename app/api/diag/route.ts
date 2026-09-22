@@ -23,7 +23,7 @@ Règles d'intervention :
 3. Si un outil ou outillage spécifique est requis, mentionne la balise : [OUTIL_CIBLE: Nom de l'outil]
 4. Reste concis et guide pas à pas en attendant le retour de mesure du mécano.`
 
-    // Formatage des messages pour l'API Gemini
+    // Formatage des messages pour Gemini
     const contents = [
       {
         role: "user",
@@ -31,12 +31,13 @@ Règles d'intervention :
       },
       ...messages.map((m: { role: string; content: string }) => ({
         role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }]
+        parts: [{ text: String(m.content || "") }]
       }))
     ]
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    // Appel principal sur gemini-3.6-flash
+    let response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -44,7 +45,20 @@ Règles d'intervention :
       }
     )
 
-    const data = await response.json()
+    let data = await response.json()
+
+    // Repli de sécurité sur 3.5-flash-lite si nécessaire
+    if (!response.ok || data.error) {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents })
+        }
+      )
+      data = await response.json()
+    }
 
     if (data.error) {
       return NextResponse.json(
