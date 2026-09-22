@@ -1,10 +1,15 @@
-import { createClient } from "@supabase/supabase-js"
-
 const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
 const supabaseUrl = rawUrl.replace(/\/+$/, "")
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+function getHeaders(extraHeaders: Record<string, string> = {}) {
+  return {
+    apikey: supabaseAnonKey,
+    Authorization: `Bearer ${supabaseAnonKey}`,
+    "Content-Type": "application/json",
+    ...extraHeaders
+  }
+}
 
 export interface DossierAtelier {
   id?: string
@@ -21,9 +26,46 @@ export interface DossierAtelier {
   updated_at?: string
 }
 
-/**
- * Insère un nouveau dossier en lui attribuant automatiquement le user_id connecté
- */
+// Client HTTP simulé pour app/auth et sessions locales
+export const supabase = {
+  auth: {
+    getUser: async () => {
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("jack_session_user")
+        if (stored) {
+          try {
+            return { data: { user: JSON.parse(stored) }, error: null }
+          } catch {
+            return { data: { user: null }, error: null }
+          }
+        }
+      }
+      return { data: { user: { id: "mecano-default", email: "atelier@jack.fr" } }, error: null }
+    },
+    signInWithPassword: async ({ email }: { email: string; password?: string }) => {
+      const user = { id: `user_${email.replace(/[^a-zA-Z0-9]/g, "_")}`, email }
+      if (typeof window !== "undefined") {
+        localStorage.setItem("jack_session_user", JSON.stringify(user))
+      }
+      return { data: { user }, error: null }
+    },
+    signUp: async ({ email }: { email: string; password?: string }) => {
+      const user = { id: `user_${email.replace(/[^a-zA-Z0-9]/g, "_")}`, email }
+      if (typeof window !== "undefined") {
+        localStorage.setItem("jack_session_user", JSON.stringify(user))
+      }
+      return { data: { user }, error: null }
+    },
+    signOut: async () => {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("jack_session_user")
+      }
+      return { error: null }
+    }
+  }
+}
+
+// 1. Insertion nouveau dossier (CCS)
 export async function insertDossierAtelier(data: {
   immatriculation: string
   vin?: string
@@ -32,88 +74,119 @@ export async function insertDossierAtelier(data: {
   photos_tour_vehicule?: string[]
   constats_technicien?: string
 }) {
-  const { data: { user } } = await supabase.auth.getUser()
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Variables Supabase non configurées sur Vercel.")
+  }
 
   const payload = {
     ...data,
-    user_id: user?.id || null,
     statut: data.statut || "en_diagnostic",
     updated_at: new Date().toISOString()
   }
 
-  const { data: inserted, error } = await supabase
-    .from("dossiers_atelier")
-    .insert([payload])
-    .select()
-    .single()
+  const res = await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier`, {
+    method: "POST",
+    headers: getHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify(payload)
+  })
 
-  if (error) {
-    throw new Error(error.message)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.message || `Erreur Supabase ${res.status}`)
   }
 
-  return inserted
+  const list = await res.json()
+  return Array.isArray(list) ? list[0] : list
 }
 
-/**
- * Récupère les dossiers de l'utilisateur connecté selon le statut demandé
- */
+// 2. Récupération filtrée pour le Dashboard (En cours vs Archives)
 export async function getDossiersByStatut(type: "en_cours" | "archives") {
-  let query = supabase
-    .from("dossiers_atelier")
-    .select("*")
-    .order("created_at", { ascending: false })
+  if (!supabaseUrl || !supabaseAnonKey) return []
 
-  if (type === "en_cours") {
-    query = query.neq("statut", "termine").neq("statut", "cloture")
-  } else {
-    query = query.in("statut", ["termine", "cloture"])
-  }
+  try {
+    let filter = "statut=neq.termine&statut=neq.cloture"
+    if (type === "archives") {
+      filter = "statut=in.(termine,cloture)"
+    }
 
-  const { data, error } = await query
+    const res = await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?${filter}&order=created_at.desc`, {
+      method: "GET",
+      headers: getHeaders(),
+      cache: "no-store"
+    })
 
-  if (error) {
-    console.error("Erreur récupération dossiers:", error.message)
+    if (!res.ok) return []
+    return await res.json()
+  } catch (err) {
+    console.error("Erreur getDossiersByStatut:", err)
     return []
   }
-
-  return data || []
 }
 
-/**
- * Récupère un dossier spécifique par son ID (sécurisé par RLS)
- */
-export async function getDossierById(id: string) {
-  const { data, error } = await supabase
-    .from("dossiers_atelier")
-    .select("*")
-    .eq("id", id)
-    .single()
+// 3. Récupération globale pour les anciennes pages (Chef, etc.)
+export async function getAllDossiers() {
+  if (!supabaseUrl || !supabaseAnonKey) return []
 
-  if (error) {
-    console.error("Erreur récupération dossier par ID:", error.message)
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?select=*&order=created_at.desc`, {
+      method: "GET",
+      headers: getHeaders(),
+      cache: "no-store"
+    })
+
+    if (!res.ok) return []
+    return await res.json()
+  } catch (err) {
+    console.error("Erreur getAllDossiers:", err)
+    return []
+  }
+}
+
+// 4. Récupération d'un dossier par ID
+export async function getDossierById(id: string) {
+  if (!supabaseUrl || !supabaseAnonKey || !id) return null
+
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?id=eq.${id}&select=*`, {
+      method: "GET",
+      headers: getHeaders(),
+      cache: "no-store"
+    })
+
+    if (!res.ok) return null
+    const list = await res.json()
+    return Array.isArray(list) && list.length > 0 ? list[0] : null
+  } catch (err) {
+    console.error("Erreur getDossierById:", err)
     return null
   }
-
-  return data
 }
 
-/**
- * Met à jour un dossier existant
- */
-export async function updateDossierStatusAndData(id: string, updates: Partial<DossierAtelier>) {
-  const { data, error } = await supabase
-    .from("dossiers_atelier")
-    .update({
+// 5. Mise à jour générique d'un dossier
+export async function updateDossierStatusAndData(id: string, updates: Record<string, any>) {
+  if (!supabaseUrl || !supabaseAnonKey || !id) {
+    throw new Error("Identifiant ou variables Supabase manquants.")
+  }
+
+  const res = await fetch(`${supabaseUrl}/rest/v1/dossiers_atelier?id=eq.${id}`, {
+    method: "PATCH",
+    headers: getHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify({
       ...updates,
       updated_at: new Date().toISOString()
     })
-    .eq("id", id)
-    .select()
-    .single()
+  })
 
-  if (error) {
-    throw new Error(error.message)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.message || `Erreur PATCH ${res.status}`)
   }
 
-  return data
+  const list = await res.json()
+  return Array.isArray(list) ? list[0] : list
+}
+
+// 6. Sauvegarde spécifique de l'historique chat (pour anciennes pages)
+export async function saveDossierChatHistory(id: string, chatHistory: any[]) {
+  return updateDossierStatusAndData(id, { chat_history: chatHistory })
 }
